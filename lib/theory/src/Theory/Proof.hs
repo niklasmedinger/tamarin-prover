@@ -1056,6 +1056,8 @@ proveSystemDFS heuristic tactics ctxt d0 sys0 =
           [] | finishedSubterms ctxt sys -> node Solved M.empty
           []                             -> node Unfinishable M.empty
           (method, (cases, _expl)):_     -> node method cases
+          -- TODO-NM: Does this whole list get eagerly computed?
+          -- Or is haskell smart enough to avoid these wasted computations
       where
 
         node method cases =

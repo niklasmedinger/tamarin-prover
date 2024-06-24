@@ -138,6 +138,7 @@ closeRuleCache parameters restrictions typAsms forcedInjFacts sig protoRules int
         (error "closeRuleCache: lemma name should not matter here") [] verbose isdiff
         (all isSubtermRule {-- $ trace (show destr ++ " - " ++ show (map isSubtermRule destr))-} destr) (any isConstantRule destr)
         isSapic
+        Nothing -- No bound since the computation of sources must not use the bounded constraint solving rule
 
     -- Maude handle
     hnd = L.get sigmMaudeHandle sig

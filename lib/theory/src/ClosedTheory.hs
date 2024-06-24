@@ -19,7 +19,7 @@ import Text.PrettyPrint.Highlight
 import Term.Macro
 
 
-import           Prelude                             hiding (id, (.))                 
+import           Prelude                             hiding (id, (.))
 
 
 -- import           Data.Typeable
@@ -94,24 +94,29 @@ getProtoRuleEsDiff s = S.toList . S.fromList . map ((L.get oprRuleE) . openProto
 
 -- | Get the proof context for a lemma of the closed theory.
 getProofContext :: Lemma a -> ClosedTheory -> ProofContext
-getProofContext l thy = ProofContext
-    ( L.get thySignature                       thy)
-    ( L.get (crcRules . thyCache)              thy)
-    ( L.get (crcInjectiveFactInsts . thyCache) thy)
-    kind
-    ( L.get (cases . thyCache)                 thy)
-    inductionHint
-    specifiedHeuristic
-    specifiedTactic
-    (toSystemTraceQuantifier $ L.get lTraceQuantifier l)
-    (L.get lName l)
-    ([ h | HideLemma h <- L.get lAttributes l])
-    ( L.get (verboseOption.thyOptions)         thy)
-    False
-    (all isSubtermRule  $ filter isDestrRule $ intruderRules $ L.get (crcRules . thyCache) thy)
-    (any isConstantRule $ filter isDestrRule $ intruderRules $ L.get (crcRules . thyCache) thy)
-    (L.get thyIsSapic thy)
+getProofContext l thy = context
   where
+    context = ProofContext
+      ( L.get thySignature                       thy)
+      ( L.get (crcRules . thyCache)              thy)
+      ( L.get (crcInjectiveFactInsts . thyCache) thy)
+      kind
+      ( L.get (cases . thyCache)                 thy)
+      inductionHint
+      specifiedHeuristic
+      specifiedTactic
+      (toSystemTraceQuantifier $ L.get lTraceQuantifier l)
+      (L.get lName l)
+      ([ h | HideLemma h <- L.get lAttributes l])
+      ( L.get (verboseOption.thyOptions)         thy)
+      False
+      (all isSubtermRule  $ filter isDestrRule $ intruderRules $ L.get (crcRules . thyCache) thy)
+      (any isConstantRule $ filter isDestrRule $ intruderRules $ L.get (crcRules . thyCache) thy)
+      (L.get thyIsSapic thy)
+      bound
+
+    bound   = if SourceLemma `elem` L.get lAttributes l then Nothing -- Don't use bounded solving for sources lemmas
+              else L.get thyBound thy                                -- Look in the theory for bound
     kind    = lemmaSourceKind l
     cases   = case kind of RawSource     -> crcRawSources
                            RefinedSource -> crcRefinedSources
@@ -156,6 +161,7 @@ getProofContextDiff s l thy = case s of
             (all isSubtermRule  $ filter isDestrRule $ intruderRules $ L.get (crcRules . diffThyCacheLeft) thy)
             (any isConstantRule $ filter isDestrRule $ intruderRules $ L.get (crcRules . diffThyCacheLeft) thy)
             (L.get diffThyIsSapic thy)
+            Nothing -- No bounded solving in diff mode
   RHS -> ProofContext
             ( L.get diffThySignature                    thy)
             ( L.get (crcRules . diffThyCacheRight)           thy)
@@ -173,6 +179,7 @@ getProofContextDiff s l thy = case s of
             (all isSubtermRule  $ filter isDestrRule $ intruderRules $ L.get (crcRules . diffThyCacheRight) thy)
             (any isConstantRule $ filter isDestrRule $ intruderRules $ L.get (crcRules . diffThyCacheRight) thy)
             (L.get diffThyIsSapic thy)
+            Nothing -- No bounded solving in diff mode
   where
     kind    = lemmaSourceKind l
     cases   = case kind of RawSource     -> crcRawSources
@@ -232,6 +239,7 @@ getDiffProofContext l thy = DiffProofContext (proofContext LHS) (proofContext RH
             (all isSubtermRule  $ filter isDestrRule $ intruderRules $ L.get (crcRules . diffThyCacheLeft) thy)
             (any isConstantRule $ filter isDestrRule $ intruderRules $ L.get (crcRules . diffThyCacheLeft) thy)
             (L.get diffThyIsSapic thy)
+            Nothing -- No bounded solving in diff mode
         RHS -> ProofContext
             ( L.get diffThySignature                    thy)
             ( L.get (crcRules . diffThyDiffCacheRight)           thy)
@@ -249,6 +257,7 @@ getDiffProofContext l thy = DiffProofContext (proofContext LHS) (proofContext RH
             (all isSubtermRule  $ filter isDestrRule $ intruderRules $ L.get (crcRules . diffThyCacheRight) thy)
             (any isConstantRule $ filter isDestrRule $ intruderRules $ L.get (crcRules . diffThyCacheRight) thy)
             (L.get diffThyIsSapic thy)
+            Nothing -- No bounded solving in diff mode
 
     specifiedHeuristic = case lattr of
         Just lh -> Just lh
@@ -408,7 +417,8 @@ prettyClosedTheory thy = if containsManualRuleVariants mergedRules
             ,_thyCache=(L.get thyCache thy)
             ,_thyItems = mergedRules
             ,_thyOptions =(L.get thyOptions thy)
-            ,_thyIsSapic = (L.get thyIsSapic thy)}
+            ,_thyIsSapic = (L.get thyIsSapic thy)
+            ,_thyBound = (L.get thyBound thy)}
     ppInjectiveFactInsts crc =
         case S.toList $ L.get crcInjectiveFactInsts crc of
             []   -> emptyDoc

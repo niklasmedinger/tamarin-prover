@@ -20,18 +20,18 @@ import Theory.Model.Fact
 -- | Note: setOption below assumes all values to be boolean
 data Option = Option
         {
-          _verboseOption     :: Bool
-        , _transAllowPatternMatchinginLookup   :: Bool
-        , _transProgress            :: Bool
-        , _transReliable            :: Bool
-        , _transReport            :: Bool
-        , _stateChannelOpt            :: Bool
-        , _asynchronousChannels       :: Bool
-        , _compressEvents       :: Bool
-        , _forcedInjectiveFacts :: S.Set FactTag
-        , _lemmasToProve        :: [String]
-        , _openChainsLimit      :: Integer
-        , _saturationLimit      :: Integer
+          _verboseOption                     :: Bool
+        , _transAllowPatternMatchinginLookup :: Bool
+        , _transProgress                     :: Bool
+        , _transReliable                     :: Bool
+        , _transReport                       :: Bool
+        , _stateChannelOpt                   :: Bool
+        , _asynchronousChannels              :: Bool
+        , _compressEvents                    :: Bool
+        , _forcedInjectiveFacts              :: S.Set FactTag
+        , _lemmasToProve                     :: [String]
+        , _openChainsLimit                   :: Integer
+        , _saturationLimit                   :: Integer
         }
         deriving( Eq, Ord, Show, Generic, NFData, Binary )
 $(mkLabels [''Option])

@@ -20,6 +20,7 @@ module Theory.Constraint.Solver.Goals (
   openGoals
   , solveGoal
   , plainOpenGoals
+  , enforceBound
   ) where
 
 -- import           Debug.Trace
@@ -53,6 +54,7 @@ import           Term.Builtin.Convenience
 
 
 import           Utils.Misc                              (twoPartitions)
+import Debug.Trace (traceM)
 
 ------------------------------------------------------------------------------
 -- Extracting Goals
@@ -434,3 +436,22 @@ solveSubterm st = do
         ACNewVarD ((smallPlus, big), newVar) -> insertFormula $ closeGuarded Ex [newVar] [EqE smallPlus big] gtrue
         
       return $ "SubtermSplit" ++ show i
+
+-- | CR-rule *Bounded(n)*: Enforce a bound of *n* protocol rule instances
+-- | via a quadratic amount of case distinctions over timepoint equalities of
+-- | the n + 1 rule instances.
+enforceBound :: Int -> [NodeId] -> Reduction String
+enforceBound b nodes  = do
+  let pairs = createPairs nodes
+  (case_num, (i, j)) <- disjunctionOfList $ zip [(1::Int)..] pairs
+  let (ln_i, ln_j) = (varTerm i, varTerm j)
+  insertFormula $ GAto $ EqE (lTermToBTerm ln_i) (lTermToBTerm ln_j)
+  -- traceM (show pairs)
+  return $ "Bound_" ++ show b ++ "_case_" ++ show case_num
+  where
+    -- Create all non-trivial pairings modulo commutivity
+    -- E.g.: createPairs [a, b, c] -> [(a, b), (a, c), (b, c)]
+    createPairs :: [NodeId] -> [(NodeId, NodeId)]
+    createPairs [] = []
+    createPairs [_x] = [] -- #x = #x is unecessary
+    createPairs (x:tl) = map (x, ) tl ++ createPairs tl

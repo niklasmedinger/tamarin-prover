@@ -88,6 +88,7 @@ module Theory.Constraint.System (
   , pcVerbose
   , pcConstantRHS
   , pcIsSapic
+  , pcBound
   , dpcPCLeft
   , dpcPCRight
   , dpcProtoRules
@@ -763,6 +764,7 @@ data ProofContext = ProofContext
        , _pcTrueSubterm        :: Bool -- true if in all rules the RHS is a subterm of the LHS
        , _pcConstantRHS        :: Bool -- true if there are rules with a constant RHS
        , _pcIsSapic            :: Bool -- true if the model was originally a sapic process
+       , _pcBound              :: Maybe Int -- the optional bound to use in the bounded constraint solving rule
        }
        deriving( Eq, Ord, Show, Generic, NFData, Binary )
 

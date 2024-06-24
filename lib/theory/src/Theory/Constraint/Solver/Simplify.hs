@@ -168,7 +168,7 @@ exploitUniqueMsgOrder = do
     kdConcs   <- gets (M.fromList . map (\(i, _, m) -> (m, i)) . allKDConcs)
     kuActions <- gets (M.fromList . map (\(i, _, m) -> (m, i)) . allKUActions)
     -- We can add all elements where we have an intersection
-    F.mapM_ (uncurry3 insertLess) (M.map (\(x,y)->(x,y, NormalForm))  
+    F.mapM_ (uncurry3 insertLess) (M.map (\(x,y)->(x,y, NormalForm))
               $ M.intersectionWith (,) kdConcs kuActions )
 
 -- | CR-rules *DG4*, *N5_u*, and *N5_d*: enforcing uniqueness of *Fresh* rule
@@ -419,6 +419,8 @@ insertImpliedFormulas = do
              implied `S.notMember` get sSolvedFormulas sys )
           then return (insertFormula implied)
           else []
+
+
 
 -- | CR-rule *S_fresh-order*:
 --
@@ -693,4 +695,4 @@ addNonInjectiveFactInstances = do
 
 
 
- 
+

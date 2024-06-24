@@ -172,10 +172,10 @@ closeTheoryWithMaude sig thy0 autoSources showSaturation =
   if autoSources && containsPartialDeconstructions (cache items)
     then
         proveTheory (const True) checkProof
-      $ Theory (L.get thyName thy0) (L.get thyInFile thy0) h t sig (cache items') items' (L.get thyOptions thy0) (L.get thyIsSapic thy0)
+      $ Theory (L.get thyName thy0) (L.get thyInFile thy0) h t sig (cache items') items' (L.get thyOptions thy0) (L.get thyIsSapic thy0) (L.get thyBound thy0)
     else
         proveTheory (const True) checkProof
-      $ Theory (L.get thyName thy0) (L.get thyInFile thy0) h t sig (cache items) items (L.get thyOptions thy0) (L.get thyIsSapic thy0)
+      $ Theory (L.get thyName thy0) (L.get thyInFile thy0) h t sig (cache items) items (L.get thyOptions thy0) (L.get thyIsSapic thy0) (L.get thyBound thy0)
   where
     parameters = Sources.IntegerParameters (L.get (openChainsLimit.thyOptions) thy0) (L.get (saturationLimit.thyOptions) thy0) showSaturation
     h          = L.get thyHeuristic thy0
@@ -234,7 +234,7 @@ closeTheoryWithMaude sig thy0 autoSources showSaturation =
 
     -- extract protocol rules
     rules :: [TheoryItem ClosedProtoRule IncrementalProof s] -> [ClosedProtoRule]
-    rules its = theoryRules (Theory errClose errClose errClose errClose errClose errClose its errClose False)
+    rules its = theoryRules (Theory errClose errClose errClose errClose errClose errClose its errClose False Nothing)
     errClose = error "closeTheory"
 
     addSolvingLoopBreakers = useAutoLoopBreakersAC
@@ -442,11 +442,11 @@ applyPartialEvaluationDiff evalStyle autoSources thy0 =
 -- | Open a theory by dropping the closed world assumption and values whose
 -- soundness depends on it.
 openTheory :: ClosedTheory -> OpenTheory
-openTheory  (Theory n f h t sig c items opts sapic) = openTranslatedTheory(
+openTheory  (Theory n f h t sig c items opts sapic bound) = openTranslatedTheory (
     Theory n f h t (toSignaturePure sig) (openRuleCache c)
     -- We merge duplicate rules if they were split into variants
       (mergeOpenProtoRules $ map (mapTheoryItem openProtoRule incrementalToSkeletonProof) items)
-      opts sapic)
+      opts sapic bound)
 
 -- | Open a theory by dropping the closed world assumption and values whose
 -- soundness depends on it.

@@ -20,6 +20,7 @@ module Main.TheoryLoader (
   , oMaudePath
   , oVerboseMode
   , oParseOnlyMode
+  , oBoundedConstraintSolving
   , defaultTheoryLoadOptions
   , ArgumentError(..)
   , mkTheoryLoadOptions
@@ -73,7 +74,7 @@ import           Theory.Tools.Wellformedness
 import           Theory.Tools.MessageDerivationChecks
 import           Theory.Module
 
-import           TheoryObject                        (diffThyOptions, diffTheoryConfigBlock, theoryConfigBlock)
+import           TheoryObject                        (diffThyOptions, diffTheoryConfigBlock, theoryConfigBlock, thyBound)
 
 import qualified Sapic
 import qualified Export
@@ -160,6 +161,8 @@ theoryLoadFlags =
   , flagOpt "5" ["derivcheck-timeout","d"] (updateArg "derivcheck-timeout" ) "INT"
       "Set timeout for message derivation checks in sec (default 5). 0 deactivates check."
 
+  , flagOpt "Nothing" ["bounded-constraint-solving", "bcs"] (updateArg "bounded-constraint-solving") "INT" "Set the optional bound for protocol rules after which bounded constraint solving applies. Disabled by default."
+
 
 --  , flagOpt "" ["diff"] (updateArg "diff") "OFF|ON"
 --      "Turn on observational equivalence (default OFF)."
@@ -170,45 +173,47 @@ theoryLoadFlags =
 -----------------------------------------------
 
 data TheoryLoadOptions = TheoryLoadOptions {
-    _oProveMode         :: Bool
-  , _oLemmaNames        :: [String]
-  , _oStopOnTrace       :: Maybe SolutionExtractor
-  , _oProofBound        :: Maybe Int
-  , _oHeuristic         :: Maybe (Heuristic ProofContext)
-  , _oPartialEvaluation :: Maybe EvaluationStyle
-  , _oDefines           :: [String]
-  , _oDiffMode          :: Bool
-  , _oQuitOnWarning     :: Bool
-  , _oAutoSources       :: Bool
-  , _oVerboseMode       :: Bool
-  , _oOutputModule      :: ModuleType -- Note: This flag is only used for batch mode.
-  , _oMaudePath         :: FilePath -- FIXME: Other functions defined in Environment.hs
-  , _oParseOnlyMode     :: Bool
-  , _oOpenChain         :: Integer
-  , _oSaturation        :: Integer
-  , _oDerivationChecks  :: Int
+    _oProveMode                :: Bool
+  , _oLemmaNames               :: [String]
+  , _oStopOnTrace              :: Maybe SolutionExtractor
+  , _oProofBound               :: Maybe Int
+  , _oHeuristic                :: Maybe (Heuristic ProofContext)
+  , _oPartialEvaluation        :: Maybe EvaluationStyle
+  , _oDefines                  :: [String]
+  , _oDiffMode                 :: Bool
+  , _oQuitOnWarning            :: Bool
+  , _oAutoSources              :: Bool
+  , _oVerboseMode              :: Bool
+  , _oOutputModule             :: ModuleType -- Note: This flag is only used for batch mode.
+  , _oMaudePath                :: FilePath -- FIXME: Other functions defined in Environment.hs
+  , _oParseOnlyMode            :: Bool
+  , _oOpenChain                :: Integer
+  , _oSaturation               :: Integer
+  , _oDerivationChecks         :: Int
+  , _oBoundedConstraintSolving :: Maybe Int
 } deriving Show
 $(mkLabels [''TheoryLoadOptions])
 
 defaultTheoryLoadOptions :: TheoryLoadOptions
 defaultTheoryLoadOptions = TheoryLoadOptions {
-    _oProveMode         = False
-  , _oLemmaNames        = []
-  , _oStopOnTrace       = Nothing
-  , _oProofBound        = Nothing
-  , _oHeuristic         = Nothing
-  , _oPartialEvaluation = Nothing
-  , _oDefines           = []
-  , _oDiffMode          = False
-  , _oQuitOnWarning     = False
-  , _oAutoSources       = False
-  , _oVerboseMode       = False
-  , _oOutputModule      = ModuleMsr
-  , _oMaudePath         = "maude"
-  , _oParseOnlyMode     = False
-  , _oOpenChain         = 10
-  , _oSaturation        = 5
-  , _oDerivationChecks  = 5
+    _oProveMode                = False
+  , _oLemmaNames               = []
+  , _oStopOnTrace              = Nothing
+  , _oProofBound               = Nothing
+  , _oHeuristic                = Nothing
+  , _oPartialEvaluation        = Nothing
+  , _oDefines                  = []
+  , _oDiffMode                 = False
+  , _oQuitOnWarning            = False
+  , _oAutoSources              = False
+  , _oVerboseMode              = False
+  , _oOutputModule             = ModuleMsr
+  , _oMaudePath                = "maude"
+  , _oParseOnlyMode            = False
+  , _oOpenChain                = 10
+  , _oSaturation               = 5
+  , _oDerivationChecks         = 5
+  , _oBoundedConstraintSolving = Nothing
 }
 
 toParserFlags :: TheoryLoadOptions -> [String]
@@ -238,6 +243,7 @@ mkTheoryLoadOptions as = TheoryLoadOptions
                          <*> openchain
                          <*> saturation
                          <*> deriv
+                         <*> bcs
   where
     proveMode  = return $ argExists "prove" as
     lemmaNames = return $ findArg "prove" as ++ findArg "lemma" as
@@ -294,6 +300,10 @@ mkTheoryLoadOptions as = TheoryLoadOptions
     derivDefault = L.get oDerivationChecks defaultTheoryLoadOptions
     deriv = parseIntArg derivchecks derivDefault id "derivcheck-timeout: invalid bound given"
 
+    solvingBound = findArg "bounded-constraint-solving" as
+    solvingDefault = Nothing
+    bcs = parseIntArg solvingBound solvingDefault Just "bounded-constraint-solving: invalid bound given"
+  
 stopOnTrace :: MonadError ArgumentError m => Arguments -> m (Maybe SolutionExtractor)
 stopOnTrace as = case map toLower <$> findArg "stop-on-trace" as of
   Just "dfs"    -> return $ Just CutDFS
@@ -568,7 +578,7 @@ constructAutoProver thyOpts =
 
 -- | Add parameters in the OpenTheory, here openchain and saturation in the options
 addParamsOptions :: TheoryLoadOptions -> Either OpenTheory OpenDiffTheory -> Either OpenTheory OpenDiffTheory
-addParamsOptions opt = addVerboseOptions . addSatArg . addChainsArg . addLemmaToProve
+addParamsOptions opt = addVerboseOptions . addSatArg . addChainsArg . addLemmaToProve . addBcsBound
 
     where
       -- Add Open Chain Limit parameters in the Options
@@ -587,6 +597,10 @@ addParamsOptions opt = addVerboseOptions . addSatArg . addChainsArg . addLemmaTo
       verb = L.get oVerboseMode opt
       addVerboseOptions (Left thy) = Left $ set (verboseOption . thyOptions) verb thy
       addVerboseOptions (Right diffThy) = Right $ set (verboseOption . diffThyOptions) verb diffThy
+      -- Add bounded constraint solving bound only to normal mode
+      bcs = L.get oBoundedConstraintSolving opt
+      addBcsBound (Left thy) = Left $ set thyBound bcs thy
+      addBcsBound (Right thy) = Right thy
 
 
 ------------------------------------------------------------------------------

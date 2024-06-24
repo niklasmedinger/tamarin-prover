@@ -736,7 +736,7 @@ solveSubstEqs split subst =
 
 -- | Add a list of node equalities to the equation store.
 solveNodeIdEqs :: [Equal NodeId] -> Reduction ChangeIndicator
-solveNodeIdEqs = solveTermEqs SplitNow . map (fmap varTerm)
+solveNodeIdEqs = solveTermEqs SplitNow . (map (fmap varTerm))
 
 -- | Add a list of fact equalities to the equation store, if possible.
 solveFactEqs :: SplitStrategy -> [Equal LNFact] -> Reduction ChangeIndicator

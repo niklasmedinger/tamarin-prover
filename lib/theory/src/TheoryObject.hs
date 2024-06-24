@@ -22,6 +22,7 @@ module TheoryObject (
   , thyItems
   , thyOptions
   , thyIsSapic
+  , thyBound
   , diffThyName
   , diffThyInFile
   , diffThyItems
@@ -189,6 +190,7 @@ data Theory sig c r p s = Theory {
        , _thyItems     :: [TheoryItem r p s]
        , _thyOptions   :: Option
        , _thyIsSapic   :: Bool
+       , _thyBound     :: Maybe Int -- the optional bound for the bounded constraint solving rule
        }
        deriving( Eq, Ord, Show, Generic, NFData, Binary )
 
@@ -541,7 +543,7 @@ addDiffLemma l thy = do
 
 -- | Add a new default heuristic. Fails if a heuristic is already defined.
 addHeuristic :: [GoalRanking ProofContext] -> Theory sig c r p s -> Maybe (Theory sig c r p s)
-addHeuristic h (Theory n f [] t sig c i o sapic) = Just (Theory n f h t sig c i o sapic)
+addHeuristic h (Theory n f [] t sig c i o sapic b) = Just (Theory n f h t sig c i o sapic b)
 addHeuristic _ _ = Nothing
 
 addDiffHeuristic :: [GoalRanking ProofContext] -> DiffTheory sig c r r2 p p2 -> Maybe (DiffTheory sig c r r2 p p2)
@@ -549,8 +551,8 @@ addDiffHeuristic h (DiffTheory n f [] t sig cl cr dcl dcr i opt sapic) = Just (D
 addDiffHeuristic _ _ = Nothing
 
 addTactic :: Tactic ProofContext -> Theory sig c r p s -> Maybe (Theory sig c r p s)
-addTactic t (Theory n f h [] sig c i o sapic) = Just (Theory n f h [t] sig c i o sapic)
-addTactic t (Theory n f h l sig c i o sapic) = Just (Theory n f h (l++[t]) sig c i o sapic)
+addTactic t (Theory n f h [] sig c i o sapic b) = Just (Theory n f h [t] sig c i o sapic b)
+addTactic t (Theory n f h l sig c i o sapic b) = Just (Theory n f h (l++[t]) sig c i o sapic b)
 -- addTactic _ _ = Nothing
 
 addDiffTactic :: Tactic ProofContext -> DiffTheory sig c r r2 p p2 -> Maybe (DiffTheory sig c r r2 p p2)
