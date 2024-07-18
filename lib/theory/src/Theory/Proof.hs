@@ -108,6 +108,7 @@ import qualified Data.Label                       as L
 import qualified Data.Map                         as M
 import           Data.Maybe
 -- import           Data.Monoid
+import Data.PQueue.Prio.Min                       as PQ
 
 import           Debug.Trace
 
@@ -119,6 +120,7 @@ import           Control.Parallel.Strategies
 import           Theory.Constraint.Solver
 import           Theory.Model
 import           Theory.Text.Pretty
+import Theory.Constraint.Solver.Goals (openGoals)
 
 
 
@@ -132,6 +134,7 @@ data LTree l a = LNode
      , children :: M.Map l (LTree l a)
      }
      deriving( Eq, Ord, Show )
+-- $(mkLabels [''LTree])
 
 instance Functor (LTree l) where
     fmap f (LNode r cs) = LNode (f r) (M.map (fmap f) cs)
@@ -367,7 +370,7 @@ annotateProof f =
         LNode (ProofStep method info') cs'
       where
         cs' = M.map go cs
-        info' = f step (map (psInfo . root . snd) (M.toList cs'))
+        info' = f step (Data.List.map (psInfo . root . snd) (M.toList cs'))
 
 -- | Annotate a proof in a bottom-up fashion.
 annotateDiffProof :: (DiffProofStep a -> [b] -> b) -> DiffProof a -> DiffProof b
@@ -378,7 +381,7 @@ annotateDiffProof f =
         LNode (DiffProofStep method info') cs'
       where
         cs' = M.map go cs
-        info' = f step (map (dpsInfo . root . snd) (M.toList cs'))
+        info' = f step (Data.List.map (dpsInfo . root . snd) (M.toList cs'))
 
 -- Proof cutting
 ----------------
@@ -722,7 +725,7 @@ firstProver = foldr orelse failProver
 contradictionProver :: Prover
 contradictionProver = Prover $ \ctxt d sys prf ->
     runProver
-        (firstProver $ map oneStepProver $
+        (firstProver $ Data.List.map oneStepProver $
             (Contradiction . Just <$> contradictions ctxt sys))
         ctxt d sys prf
 
@@ -735,7 +738,7 @@ contradictionDiffProver :: DiffProver
 contradictionDiffProver = DiffProver $ \ctxt d sys prf ->
   case (L.get dsCurrentRule sys, L.get dsSide sys, L.get dsSystem sys) of
     (Just _, Just s, Just sys') -> runDiffProver
-              (firstDiffProver $ map oneStepDiffProver $
+              (firstDiffProver $ Data.List.map oneStepDiffProver $
                   (DiffBackwardSearchStep . Contradiction . Just <$> contradictions (eitherProofContext ctxt s) sys'))
           ctxt d sys prf
     (_     , _     , _        ) -> Nothing
@@ -761,7 +764,7 @@ selectHeuristic prover ctx = setQuitOnEmpty $ fromMaybe (defaultHeuristic False)
                              (apDefaultHeuristic prover <|> L.get pcHeuristic ctx)
   where
     setQuitOnEmpty :: Heuristic ProofContext -> Heuristic ProofContext
-    setQuitOnEmpty (Heuristic rankings) = Heuristic (map aux rankings)
+    setQuitOnEmpty (Heuristic rankings) = Heuristic (Data.List.map aux rankings)
 
     aux :: GoalRanking a -> GoalRanking a
     aux (OracleRanking _ o) = OracleRanking (quitOnEmptyOracle prover) o
@@ -783,10 +786,11 @@ selectDiffTactic prover ctx = fromMaybe [defaultTactic]
 
 runAutoProver :: AutoProver -> Prover
 runAutoProver aut@(AutoProver _ _  bound cut _) =
-    mapProverProof cutSolved $ maybe id boundProver bound autoProver
-  where
+    mapProverProof cutSolved $ maybe autoProver (`boundProver` autoProver) bound
+    where
     cutSolved = case cut of
-      CutDFS             -> cutOnSolvedDFS
+      CutDFS             -> cutOnSolvedAStar -- We simply replace the default DFS here to experiment.
+      -- Revert this and implement a CLI arg once we have results.
       CutBFS             -> cutOnSolvedBFS
       CutSingleThreadDFS -> cutOnSolvedSingleThreadDFS
       CutNothing         -> id
@@ -982,6 +986,53 @@ cutOnSolvedDFSDiff prf0 =
         Nothing     ->
           error "Theory.Constraint.cutOnSolvedDFSDiff: impossible, extractSolved failed, invalid path"
 
+-- | Search for attacks in an AStar manner, i.e., guided by a heuristic.
+cutOnSolvedAStar :: Proof (Maybe System) -> Proof (Maybe System)
+cutOnSolvedAStar prf0 = trace "DEBUG --- Executing A* proof search" $ astar (PQ.singleton 0 (prf0', 0))
+  where
+    prf0' = insertPaths prf0
+    -- astar :: MinPQueue Int (Proof (Maybe a, ProofPath), Int) -> Proof (Maybe a)
+    astar pq
+      -- If open set is empty the search has failed. Like `cutOnSolvedBFS' and
+      -- `cutOnSolvedDFS', we return the original `prf0' in this case.
+      | PQ.null pq = prf0 
+      -- Don't search in nodes that are not annotated
+      | (LNode (ProofStep _ (Nothing, _)) _) <- prf = prf0
+      -- If the current `prf' is solved, we return the path to it.
+      | (LNode (ProofStep Solved (Just _, path)) _) <- prf = extractSolved path prf0
+      -- Recurse on annotated proof
+      | (LNode (ProofStep _ (Just _, _)) _ ) <- prf = astar pq''
+      where
+        -- Find node with min f-cost
+        (prf, gcost) = snd. PQ.findMin $ pq
+        -- Gcost for new cases. Every proof method currently has edge weight 1
+        -- TODO-NM: Turn this into `gcost + distance current_constraint_sys successor_constraint_sys'
+        gcost' = gcost + 1
+        -- Get the cases
+        cases = children prf
+        -- Delete current prf from priority queue
+        pq' = PQ.deleteMin pq
+        -- Insert the new cases into the priority queue
+        pq'' = Data.List.foldl' (\q successor_case
+          -> PQ.insert (gcost' + heuristic successor_case) (successor_case, gcost') q)  pq' cases
+          --           ^ Increment gcost and add heuristic ^ Put successor case + new g cost
+
+    -- TODO-NM: Actual heuristic. Should behave like BFS without it.
+    heuristic :: Proof (Maybe System, ProofPath) -> Int
+    -- Use amount of open goals as heuristic
+    heuristic (LNode (ProofStep _step (Just _sys, _)) _cases) = 0
+    -- Heuristic should never be called on un-annotated nodes.
+    heuristic (LNode (ProofStep _ (Nothing, _)) _) = error "Theory.Constraint.cutOnSolvedAStar: impossible, heuristic called with un-annotated node"
+    
+
+    extractSolved []         p               = p
+    extractSolved (label:ps) (LNode pstep m) = case M.lookup label m of
+        Just subprf ->
+          LNode pstep (M.fromList [(label, extractSolved ps subprf)])
+        Nothing     ->
+          error "Theory.Constraint.cutOnSolvedAStar: impossible, extractSolved failed, invalid path"
+
+
 -- | Search for attacks in a BFS manner.
 cutOnSolvedBFS :: Proof (Maybe a) -> Proof (Maybe a)
 cutOnSolvedBFS =
@@ -1133,7 +1184,7 @@ prettyProofWith prettyStep prettyCase =
     ppCases ps [("", prf)]             = prettyStep ps $-$ ppPrf prf
     ppCases ps cases                   =
         prettyStep ps $-$
-        (vcat $ intersperse (prettyCase ps kwNext) $ map ppCase cases) $-$
+        (vcat $ intersperse (prettyCase ps kwNext) $ Data.List.map ppCase cases) $-$
         prettyCase ps kwQED
 
     ppCase (name, prf) = nest 2 $
@@ -1159,7 +1210,7 @@ prettyDiffProofWith prettyStep prettyCase =
     ppCases ps [("", prf)]                     = prettyStep ps $-$ ppPrf prf
     ppCases ps cases                           =
         prettyStep ps $-$
-        (vcat $ intersperse (prettyCase ps kwNext) $ map ppCase cases) $-$
+        (vcat $ intersperse (prettyCase ps kwNext) $ Data.List.map ppCase cases) $-$
         prettyCase ps kwQED
 
     ppCase (name, prf) = nest 2 $

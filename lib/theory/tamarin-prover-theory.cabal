@@ -59,6 +59,7 @@ library
       , parsec
       , pretty
       , process
+      , pqueue
       , regex-pcre-builtin
       , regex-posix
       , safe

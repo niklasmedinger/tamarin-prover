@@ -1,7 +1,7 @@
 # Please make sure that you have 'stack' installed.
 # https://github.com/commercialhaskell/stack/blob/master/doc/install_and_upgrade.md
 
-TAMARIN=~/.local/bin/tamarin-prover
+TAMARIN=~/.local/bin/tamarin-prover-a-star
 SAPIC=~/.local/bin/sapic
 
 # Settings for fast testing
