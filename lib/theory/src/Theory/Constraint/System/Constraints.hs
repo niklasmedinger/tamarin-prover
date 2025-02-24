@@ -2,6 +2,7 @@
 {-# LANGUAGE TemplateHaskell    #-}
 {-# LANGUAGE DeriveGeneric      #-}
 {-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE DerivingStrategies     #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -64,6 +65,8 @@ import           Theory.Constraint.System.Guarded
 import           Theory.Model
 import           Theory.Text.Pretty
 import           Theory.Tools.EquationStore
+import Data.Aeson (ToJSON, toJSON, object, (.=))
+import Data.Aeson.Key (fromString)
 
 ------------------------------------------------------------------------------
 -- Graph part of a sequent                                                  --
@@ -167,6 +170,33 @@ data Goal =
        -- ^ A split of a Subterm which is in SubtermStore -> _subterms
      deriving( Eq, Ord, Show, Generic, NFData, Binary )
 
+instance ToJSON Goal where
+  toJSON (ActionG lvar lnFact) =
+    object [ fromString "goal" .= ("ActionG" :: String)
+           , fromString "lvar" .= lvar
+           -- TODO:
+           , fromString "lnFact" .= "lnFact" ]
+  toJSON (ChainG nodeConc nodePrem) =
+    object [ fromString "goal" .= ("ChainG" :: String)
+           , fromString "nodeConc" .= nodeConc
+           , fromString "nodePrem" .= nodePrem ]
+  toJSON (PremiseG nodePrem lnFact) =
+    object [ fromString "goal" .= ("PremiseG" :: String)
+           , fromString "nodePrem" .= nodePrem
+           -- TODO:
+           , fromString "lnFact" .= "lnFact" ]
+  toJSON (SplitG splitId) =
+    object [ fromString "goal" .= ("SplitG" :: String)
+           , fromString "splitId" .= splitId ]
+  toJSON (DisjG disj) =
+    object [ fromString "goal" .= ("DisjG" :: String)
+    -- TODO:
+           , fromString "disjunction" .= "disj" ]
+  toJSON (SubtermG (term1, term2)) =
+    object [ fromString "goal" .= ("SubtermG" :: String)
+    -- TODO:
+           , fromString "term1" .= "term1"
+           , fromString "term2" .= "term2" ]
 -- Indicators
 -------------
 

@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
@@ -50,6 +51,7 @@ import Control.Monad.Trans.State qualified as St
 import Data.Binary
 import Data.Bool (bool)
 import Data.ByteString.Char8 qualified as BC
+import Data.ByteString.Lazy.Char8 qualified as BL
 import Data.Function (on)
 import Data.Label hiding (get)
 import Data.Label qualified as L
@@ -75,7 +77,8 @@ import Theory.Constraint.Solver.Sources
 import Theory.Constraint.System
 import Theory.Model
 import Theory.Text.Pretty
-
+import Data.Aeson (encode, ToJSON, toJSON, object, (.=))
+import Data.Aeson.Key (fromString)
 ------------------------------------------------------------------------------
 -- Utilities
 ------------------------------------------------------------------------------
@@ -206,6 +209,12 @@ data Result
     Unfinishable
   deriving (Eq, Ord, Show, Generic, NFData, Binary)
 
+-- TODO: Talk to Matthias & Mohamed whether we want the reason for the contradiction
+instance ToJSON Result where
+  toJSON Solved              = object [fromString "type" .= ("Solved")]
+  toJSON (Contradictory _) = object [fromString "type" .= ("Contradiction" :: String)]
+  toJSON Unfinishable        = object [fromString "type" .= ("Unfinishable" :: String)]
+
 -- | Sound transformations of sequents.
 data ProofMethod
   = -- | Proof was not completed
@@ -222,6 +231,14 @@ data ProofMethod
   | -- | mark as invalidated as a result of editing other lemmas
     Invalidated
   deriving (Eq, Ord, Show, Generic, NFData, Binary)
+
+instance ToJSON ProofMethod where
+  toJSON (Sorry msg)         = object [fromString "proofMethod" .= ("Sorry" :: String), fromString "message" .= msg]
+  toJSON Simplify            = object [fromString "proofMethod" .= ("Simplify" :: String)]
+  toJSON (SolveGoal goal)    = object [fromString "proofMethod" .= ("SolveGoal" :: String), fromString "goal" .= goal]
+  toJSON Induction           = object [fromString "proofMethod" .= ("Induction" :: String)]
+  toJSON (Finished result)   = object [fromString "proofMethod" .= ("Finished" :: String), fromString "result" .= result]
+  toJSON Invalidated         = object [fromString "proofMethod" .= ("Invalidated" :: String)]
 
 -- | Sound transformations of diff sequents.
 data DiffProofMethod
@@ -569,7 +586,7 @@ rankProofMethods ranking tactics ctxt sys =
    in -- Write the current system as JSON to the file
       unsafePerformIO $ do
         putStrLn $ "Appending to file: " ++ fp
-        appendFile fp (show bestMethod ++ "\n")
+        appendFile fp (BL.unpack (Data.Aeson.encode bestMethod) ++ "\n")
         return cases
   where
     execMethods = mapMaybe execMethod

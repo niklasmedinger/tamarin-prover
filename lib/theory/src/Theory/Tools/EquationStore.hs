@@ -78,6 +78,9 @@ import           Data.Maybe
 import qualified Data.Set              as S
 import           Extension.Data.Label  hiding (for, get)
 import qualified Extension.Data.Label  as L
+
+import Data.Aeson (ToJSON, toJSON, object, (.=))
+import Data.Aeson.Key (fromString)
 -- import           Extension.Data.Monoid
 
 ------------------------------------------------------------------------------
@@ -87,6 +90,11 @@ import qualified Extension.Data.Label  as L
 -- | Index of disjunction in equation store
 newtype SplitId = SplitId { unSplitId :: Integer }
   deriving( Eq, Ord, Show, Enum, Binary, NFData )
+
+
+instance ToJSON SplitId where
+  toJSON (SplitId idx) =
+    object [ fromString "splitId" .= idx ]
 
 instance HasFrees SplitId where
     foldFrees    _   = const mempty

@@ -13,6 +13,7 @@
 {-# LANGUAGE DeriveFoldable       #-}
 {-# LANGUAGE DeriveTraversable    #-}
 {-# LANGUAGE DeriveFunctor        #-}
+{-# LANGUAGE OverlappingInstances #-}
 -- {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- {-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
   -- spurious warnings for view patterns
@@ -66,7 +67,19 @@ import           Data.Data
 import           Term.LTerm
 import           Term.Unification
 import           Theory.Model.Fact
-import           Theory.Text.Pretty
+import Theory.Text.Pretty
+    ( emptyDoc,
+      parens,
+      operator_,
+      Document(text, sep, (<->)),
+      HighlightDocument,
+      opAction,
+      opLess,
+      opSubterm,
+      opEqual )
+
+import Data.Aeson (ToJSON, toJSON, object, (.=))
+import Data.Aeson.Key (fromString)
 
 
 ------------------------------------------------------------------------------
@@ -81,7 +94,16 @@ data ProtoAtom s t = Action   t (Fact t)
                  | Less t t
                  | Last t
                  | Syntactic (s t)
-            deriving( Eq, Ord, Show, Data, Typeable, Generic, NFData, Binary )
+            deriving( Eq, Ord, Show, Data, Typeable, Generic, NFData, Binary)
+
+instance (ToJSON t, ToJSON (s t)) => ToJSON (ProtoAtom s t) where
+  toJSON (Action t fact)  = object [ fromString "atom" .= ("Action" :: String), fromString "term" .= t, fromString "fact" .= fact ]
+  toJSON (EqE t1 t2)      = object [ fromString "atom" .= ("EqE" :: String), fromString "term1" .= t1, fromString "term2" .= t2 ]
+  toJSON (Subterm t1 t2)  = object [ fromString "atom" .= ("Subterm" :: String), fromString "term1" .= t1, fromString "term2" .= t2 ]
+  toJSON (Less t1 t2)     = object [ fromString "atom" .= ("Less" :: String), fromString "term1" .= t1, fromString "term2" .= t2 ]
+  toJSON (Last t)         = object [ fromString "atom" .= ("Last" :: String), fromString "term" .= t ]
+  toJSON (Syntactic st)   = object [ fromString "atom" .= ("Syntactic" :: String), fromString "syntactic" .= st ]
+
 
 -- | Datatype for syntactic sugar that is removed while parsing
 data SyntacticSugar t = Pred (Fact t)
@@ -93,11 +115,17 @@ data Unit2 t = Unit2
             deriving( Eq, Ord, Show, Data, Typeable, Generic, NFData, Binary
                         , Foldable, Traversable, Functor )
 
+instance ToJSON t => ToJSON (Unit2 t) where
+    toJSON Unit2 = toJSON "Unit"
+
 instance Apply t' (Unit2 t) where apply _ _ = Unit2
 
 -- | @Atom@s are the atoms of trace formulas parametrized over arbitrary
 -- terms, excluding syntactic sugar
 type Atom t = ProtoAtom Unit2 t
+
+instance ToJSON t => ToJSON (Atom t) where
+  toJSON = toJSON
 
 -- | @SyntacticAtom@s are the atoms of trace formulas parametrized over arbitrary
 -- terms, including syntactic sugar

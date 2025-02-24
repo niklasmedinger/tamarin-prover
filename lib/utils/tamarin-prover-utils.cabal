@@ -37,7 +37,9 @@ library
     ghc-prof-options:  -auto-all
 
     build-depends:
-        SHA
+        aeson
+      , aeson-pretty
+      , SHA
       , base
       , base64-bytestring
       , binary

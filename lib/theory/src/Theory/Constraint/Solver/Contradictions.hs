@@ -79,7 +79,6 @@ data Contradiction =
   | NodeAfterLast (NodeId, NodeId) -- ^ There is a node after the last node.
   deriving( Eq, Ord, Show, Generic, NFData, Binary )
 
-
 -- | 'True' if the constraint system is contradictory.
 contradictorySystem :: ProofContext -> System -> Bool
 contradictorySystem ctxt = not . null . contradictions ctxt

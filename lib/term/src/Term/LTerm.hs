@@ -145,6 +145,8 @@ import           Logic.Connectives
 
 import           Term.Rewriting.Definitions
 import           Term.VTerm
+import Data.Aeson (ToJSON, toJSON, object, (.=))
+import Data.Aeson.Key (fromString)
 
 ------------------------------------------------------------------------------
 -- Sorts.
@@ -162,6 +164,13 @@ data LSort = LSortPub   -- ^ Arbitrary public names.
            | LSortNode  -- ^ Sort for variables denoting nodes of derivation graphs.
            | LSortNat   -- ^ Arbitrary natural numbers.
            deriving( Eq, Ord, Show, Enum, Bounded, Typeable, Data, Generic, NFData, Binary )
+
+instance ToJSON LSort where
+  toJSON LSortPub   = object [fromString "sort" .= ("LSortPub" :: String)]
+  toJSON LSortFresh = object [fromString "sort" .= ("LSortFresh" :: String)]
+  toJSON LSortMsg   = object [fromString "sort" .= ("LSortMsg" :: String)]
+  toJSON LSortNode  = object [fromString "sort" .= ("LSortNode" :: String)]
+  toJSON LSortNat   = object [fromString "sort" .= ("LSortNat" :: String)]
 
 -- | @sortCompare s1 s2@ compares @s1@ and @s2@ with respect to the partial order on sorts.
 -- Partial order:
@@ -277,6 +286,12 @@ data LVar = LVar
      , lvarIdx  :: !Integer
      }
      deriving( Typeable, Data, Generic, NFData, Binary )
+
+instance ToJSON LVar where
+  toJSON (LVar name sort idx) =
+    object [ fromString "lvarName" .= name
+           , fromString "lvarSort" .= sort
+           , fromString "lvarIdx"  .= idx ]
 
 -- | An alternative name for logical variables, which are intented to be
 -- variables of sort 'LSortNode'.
@@ -449,6 +464,12 @@ ltermNodeId' = ltermVar' LSortNode
 data BVar v = Bound Integer  -- ^ A bound variable in De-Brujin notation.
             | Free  v        -- ^ A free variable.
             deriving( Eq, Ord, Show, Data, Typeable, Generic, NFData, Binary, IsVar)
+
+instance ToJSON v => ToJSON (BVar v) where
+  toJSON (Bound n) =
+    object [fromString "type" .= ("Bound" :: String), fromString "index" .= n]
+  toJSON (Free v) =
+    object [fromString "type" .= ("Free" :: String), fromString "variable" .= v]
 
 -- | 'LVar's combined with quantified variables. They occur only in 'LFormula's.
 type BLVar = BVar LVar

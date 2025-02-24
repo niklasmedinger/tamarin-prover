@@ -110,6 +110,8 @@ import           Logic.Connectives
 import           Text.PrettyPrint.Highlight
 
 import           Theory.Model
+import Data.Aeson (ToJSON, toJSON, object, (.=))
+import Data.Aeson.Key (fromString)
 
 -- Control.Monad.Fail import will become redundant in GHC 8.8+
 -- import qualified Control.Monad.Fail as Fail
@@ -130,6 +132,22 @@ data Guarded s c v = GAto  (Atom (VTerm c (BVar v)))
 
 instance (NFData s, NFData c, NFData v) => NFData (Guarded s c v)
 instance (Binary s, Binary c, Binary v) => Binary (Guarded s c v)
+
+instance (ToJSON s, ToJSON c, ToJSON v) => ToJSON (Guarded s c v) where
+  toJSON (GAto atom) =
+    object [fromString "type" .= ("GAto" :: String), fromString "atom" .= atom]
+  toJSON (GDisj disj) =
+    -- TODO:
+    object [fromString "type" .= ("GDisj" :: String), fromString "disjunction" .= "disj"]
+  toJSON (GConj conj) =
+    object [fromString "type" .= ("GConj" :: String), fromString "conjunction" .= "conj"]
+  toJSON (GGuarded quant vars atoms g) =
+    object [ fromString "type" .= ("GGuarded" :: String)
+           , fromString "quantifier" .= quant
+           , fromString "variables" .= vars
+           , fromString "atoms" .= atoms
+           , fromString "guard" .= g
+           ]
 
 
 isConjunction :: Guarded s c v -> Bool

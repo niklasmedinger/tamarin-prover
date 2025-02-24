@@ -120,6 +120,9 @@ import           Term.Macro
 
 import           Text.PrettyPrint.Class
 
+import Data.Aeson (ToJSON, toJSON, object, (.=))
+import Data.Aeson.Key (fromString)
+
 
 ------------------------------------------------------------------------------
 -- Fact
@@ -127,6 +130,10 @@ import           Text.PrettyPrint.Class
 
 data Multiplicity = Persistent | Linear
                   deriving( Eq, Ord, Show, Typeable, Data, Generic, NFData, Binary )
+                
+instance ToJSON Multiplicity where
+    toJSON Persistent = object [fromString "multiplicity" .= ("Persistent" :: String)]
+    toJSON Linear     = object [fromString "multiplicity" .= ("Linear" :: String)]
 
 -- | Fact tags/symbols
 data FactTag = ProtoFact Multiplicity String Int
@@ -142,12 +149,32 @@ data FactTag = ProtoFact Multiplicity String Int
                           -- to simplify computations. should never occur in a graph.
     deriving( Eq, Ord, Show, Typeable, Data, Generic, NFData, Binary )
 
+instance ToJSON FactTag where
+  toJSON (ProtoFact mul name arity) = object 
+    [ fromString "type" .= ("ProtoFact" :: String)
+    , fromString "multiplicity" .= mul
+    , fromString "name" .= name
+    , fromString "arity" .= arity ]
+  
+  toJSON FreshFact = object [fromString "type" .= ("FreshFact" :: String)]
+  toJSON OutFact = object [fromString "type" .= ("OutFact" :: String)]
+  toJSON InFact = object [fromString "type" .= ("InFact" :: String)]
+  toJSON KUFact = object [fromString "type" .= ("KUFact" :: String)]
+  toJSON KDFact = object [fromString "type" .= ("KDFact" :: String)]
+  toJSON DedFact = object [fromString "type" .= ("DedFact" :: String)]
+  toJSON TermFact = object [fromString "type" .= ("TermFact" :: String)]
+
 
 -- | Annotations are properties thhat might be used elsewhere (e.g. in
 --   dot rendering, or for sorting by heuristics) but do not affect
 --   the semantics of the fact
 data FactAnnotation = SolveFirst | SolveLast | NoSources
     deriving( Eq, Ord, Show, Typeable, Data, Generic, NFData, Binary )
+
+instance ToJSON FactAnnotation where
+    toJSON SolveFirst = object [fromString "annotation" .= ("SolveFirst" :: String)]
+    toJSON SolveLast  = object [fromString "annotation" .= ("SolveLast" :: String)]
+    toJSON NoSources  = object [fromString "annotation" .= ("NoSources" :: String)]
 
 -- | Facts.
 data Fact t = Fact
@@ -156,6 +183,12 @@ data Fact t = Fact
     , factTerms       :: [t]
     }
     deriving( Show, Typeable, Data, Generic, NFData, Binary )
+
+instance ToJSON t => ToJSON (Fact t) where
+  toJSON (Fact tag annotations terms) =
+    object [ fromString "factTag" .= tag
+           , fromString "factAnnotations" .= S.toList annotations
+           , fromString "factTerms" .= terms ]
 
 
 -- Instances

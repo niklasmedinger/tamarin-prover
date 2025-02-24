@@ -43,7 +43,9 @@ library
     ghc-prof-options:  -auto-all
 
     build-depends:
-        HUnit
+        aeson
+      , aeson-pretty
+      , HUnit
       , attoparsec
       , base
       , binary
