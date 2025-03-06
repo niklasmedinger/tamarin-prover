@@ -55,7 +55,7 @@ import Data.ByteString.Lazy.Char8 qualified as BL
 import Data.Function (on)
 import Data.Label hiding (get)
 import Data.Label qualified as L
-import Data.List (findIndex, groupBy, intercalate, isPrefixOf, partition, sortBy, uncons)
+import Data.List (findIndex, groupBy, intercalate, isInfixOf, isPrefixOf, partition, sortBy, uncons)
 import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as M
 import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, mapMaybe)
@@ -77,7 +77,7 @@ import Theory.Constraint.Solver.Sources
 import Theory.Constraint.System
 import Theory.Model
 import Theory.Text.Pretty
-import Data.Aeson (encode, ToJSON, toJSON, object, (.=))
+import Data.Aeson (encode, ToJSON, toJSON, object, (.=), Value)
 import Data.Aeson.Key (fromString)
 ------------------------------------------------------------------------------
 -- Utilities
@@ -212,8 +212,12 @@ data Result
 -- TODO: Talk to Matthias & Mohamed whether we want the reason for the contradiction
 instance ToJSON Result where
   toJSON Solved              = object [fromString "type" .= ("Solved")]
-  toJSON (Contradictory _) = object [fromString "type" .= ("Contradiction" :: String)]
+  toJSON (Contradictory _)   = object [fromString "type" .= ("Contradiction" :: String)]
   toJSON Unfinishable        = object [fromString "type" .= ("Unfinishable" :: String)]
+
+isFinishedMethod :: ProofMethod -> Bool
+isFinishedMethod (Finished _) = True
+isFinishedMethod _            = False
 
 -- | Sound transformations of sequents.
 data ProofMethod
@@ -559,6 +563,9 @@ isFinished ctxt sys
     ogs = openGoals sys
     stFinished = finishedSubterms ctxt sys
 
+stripWhitespace :: String -> String
+stripWhitespace = filter (\c -> c /= '\n' && c /= '\t')
+
 -- | Use a 'GoalRanking' to generate the ranked, list of possible
 -- 'ProofMethod's and their corresponding results in this 'ProofContext' and
 -- for this 'System'.
@@ -569,42 +576,67 @@ rankProofMethods ::
   System ->
   [(ProofMethod, (M.Map CaseName System, String))]
 rankProofMethods ranking tactics ctxt sys =
-  let Ranking (map solveGoalMethod -> goals) instr = rankGoals ctxt ranking tactics sys (openGoals sys)
+  let 
+      Ranking (map solveGoalMethod -> goals) instr =
+        rankGoals ctxt ranking tactics sys (openGoals sys)
+
       insertInduction (simplify NE.:| gs) = case L.get pcUseInduction ctxt of
         AvoidInduction -> simplify : (Induction, "") : gs
-        UseInduction -> (Induction, "") : simplify : gs
-      proofMethods = bool NE.toList insertInduction (isInitialSystem sys) ((Simplify, "") NE.:| goals)
+        UseInduction   -> (Induction, "") : simplify : gs
+
+      proofMethods =
+        bool NE.toList insertInduction (isInitialSystem sys) ((Simplify, "") NE.:| goals)
+
       stoppingMethod =
         (Finished <$> isFinished ctxt sys)
           <|> (Sorry (Just "Oracle ranked no proof methods") <$ instr)
-      allMethods = maybe proofMethods ((: []) . (,"")) stoppingMethod
-      -- Hacky first version of a file path to write to
-      fp = "./" ++ L.get pcLemmaName ctxt ++ ".data"
-      -- Get the head of the proofMethods list, i.e., the best ranked proof method.
+
+      allMethods =
+        maybe proofMethods ((: []) . (,"")) stoppingMethod
+
+      -- File path for output
+      fp = "./" ++ L.get pcLemmaName ctxt ++ ".json"
+
+      -- Get ranked proof methods
       cases = execMethods allMethods
-      bestMethod = fst $ head cases
-   in -- Write the current system as JSON to the file
-      unsafePerformIO $ do
-        putStrLn $ "Appending to file: " ++ fp
-        appendFile fp (BL.unpack (Data.Aeson.encode bestMethod) ++ "\n")
-        return cases
+      bestMethod = head cases
+
+      -- Prepare system JSON output
+      sysString = render (prettySystem sys)
+      allMethodsJSON =
+        object [ fromString "proofMethods" .= map toJSONProofMethodAndSourceRule cases ]
+      sysJSON = object [ fromString "constraintSystem" .= sysString ]
+
+  in unsafePerformIO $ do
+          -- Only write to the file if the filename contains "ExtractData"
+          -- and the best method is not `Finished`
+          when ("ExtractData" `isInfixOf` fp && not (isFinishedMethod $ fst bestMethod)) $ do
+            -- putStrLn $ "Appending to file: " ++ fp
+            appendFile fp (BL.unpack (Data.Aeson.encode sysJSON) ++ "\n")
+            appendFile fp (BL.unpack (Data.Aeson.encode allMethodsJSON) ++ "\n")
+
+          return cases
   where
+    toJSONProofMethodAndSourceRule :: (ProofMethod, (M.Map CaseName System, String)) -> Value
+    toJSONProofMethodAndSourceRule (pm, (_, sr)) = object [ fromString "proofMethod" .= render (prettyProofMethod pm), fromString "sourceRule" .= sr ]
+
     execMethods = mapMaybe execMethod
+
     execMethod (m, expl) = do
       cases <- execProofMethod ctxt m sys
       return (m, (cases, expl))
 
     sourceRule goal = case goalRule sys goal of
-      Just ru -> " (from rule " ++ getRuleName ru ++ ")"
-      Nothing -> ""
+      Just ru  -> " (from rule " ++ getRuleName ru ++ ")"
+      Nothing  -> ""
 
     solveGoalMethod (goal, (nr, usefulness)) =
       ( SolveGoal goal,
         "nr. " ++ show nr ++ sourceRule goal ++ case usefulness of
-          Useful -> ""
-          LoopBreaker -> " (loop breaker)"
+          Useful                -> ""
+          LoopBreaker           -> " (loop breaker)"
           ProbablyConstructible -> " (probably constructible)"
-          CurrentlyDeducible -> " (currently deducible)"
+          CurrentlyDeducible    -> " (currently deducible)"
       )
 
 -- | Use a 'GoalRanking' to generate the ranked, list of possible

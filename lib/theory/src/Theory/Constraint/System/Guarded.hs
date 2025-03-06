@@ -846,25 +846,25 @@ prettyGuarded fm =
     pp :: HighlightDocument d => LNGuarded -> Precise.Fresh d
     pp (GAto a) = return $ prettyNAtom $ bvarToLVar a
 
-    pp (GDisj (Disj [])) = return $ operator_  "⊥"  -- "F"
+    pp (GDisj (Disj [])) = return $ operator_  "F"  -- "F"
 
     pp (GDisj (Disj xs)) = do
         ps <- mapM (\x -> opParens <$> pp x) xs
-        return $ parens $ sep $ punctuate (operator_ " ∨") ps
+        return $ parens $ sep $ punctuate (operator_ " |") ps
         -- return $ sep $ punctuate (operator_ " |") ps
 
-    pp (GConj (Conj [])) = return $ operator_ "⊤"  -- "T"
+    pp (GConj (Conj [])) = return $ operator_ "T"  -- "T"
 
     pp (GConj (Conj xs)) = do
         ps <- mapM (\x -> opParens <$> pp x) xs
-        return $ sep $ punctuate (operator_ " ∧") ps --- " &") ps
+        return $ sep $ punctuate (operator_ " &") ps --- " &") ps
 
     pp gf0@(GGuarded _ _ _ _) =
       -- variable names invented here can be reused otherwise
       scopeFreshness $ do
           (qua, vs, atoms, gf) <- fromJust <$> openGuarded gf0
           let antecedent = (GAto . fmap (fmapTerm (fmap Free))) <$> atoms
-              connective = operator_ (case qua of All -> "⇒"; Ex -> "∧")
+              connective = operator_ (case qua of All -> "==>"; Ex -> "&")
                             -- operator_ (case qua of All -> "==>"; Ex -> "&")
               quantifier = operator_ (ppQuant qua) <-> ppVars vs <> operator_ "."
           dante <- nest 1 <$> pp (GConj (Conj antecedent))
@@ -872,11 +872,11 @@ prettyGuarded fm =
             (Ex,  _,  GConj (Conj [])) ->
                 return $ sep $ [ quantifier, dante ]
             (All, [], GDisj (Disj [])) | gf == gfalse ->
-                return $ operator_ "¬" <> dante
+                return $ operator_ "not" <> dante
             _  -> do
                 dsucc <- nest 1 <$> pp gf
                 return $ sep [ quantifier, sep [dante, connective, dsucc] ]
       where
         ppVars      = fsep . map (text . show)
-        ppQuant All = "∀"  -- "All "
-        ppQuant Ex  = "∃"  -- "Ex "
+        ppQuant All = "All"  -- "All "
+        ppQuant Ex  = "Ex"  -- "Ex "

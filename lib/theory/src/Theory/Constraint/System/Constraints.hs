@@ -300,14 +300,14 @@ prettyGoal (ChainG c p)   =
     prettyNodeConc c <-> operator_ "~~>" <-> prettyNodePrem p
 prettyGoal (PremiseG (i, (PremIdx v)) fa) =
     -- Note that we can use "▷" for conclusions once we need them.
-    prettyLNFact fa <-> text ("▶" ++ subscript (show v)) <-> prettyNodeId i
+    prettyLNFact fa <-> text ("@_" ++ show v) <-> prettyNodeId i
     -- prettyNodePrem p <> brackets (prettyLNFact fa)
-prettyGoal (DisjG (Disj []))  = text "Disj" <-> operator_ "(⊥)"
+prettyGoal (DisjG (Disj []))  = text "Disj" <-> operator_ "(F)"
 prettyGoal (DisjG (Disj gfs)) = fsep $
-    punctuate (operator_ "  ∥") (map (nest 1 . parens . prettyGuarded) gfs)
+    punctuate (operator_ "  |") (map (nest 1 . parens . prettyGuarded) gfs)
     -- punctuate (operator_ " |") (map (nest 1 . parens . prettyGuarded) gfs)
 prettyGoal (SplitG x) =
     text "splitEqs" <> parens (text $ show (unSplitId x))
 prettyGoal (SubtermG (l,r)) =
-    prettyLNTerm l <-> operator_ "⊏" <-> prettyLNTerm r
+    prettyLNTerm l <-> operator_ "<<" <-> prettyLNTerm r
 
