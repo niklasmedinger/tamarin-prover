@@ -30,6 +30,7 @@ module Web.Theory
   , nextSmartDiffThyPath
   , prevSmartThyPath
   , prevSmartDiffThyPath
+  , annotateLemmaProof
   , applyMethodAtPath
   , applyMethodAtPathDiff
   , applyDiffMethodAtPath

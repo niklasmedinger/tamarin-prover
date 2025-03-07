@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverlappingInstances #-}
 {-# LANGUAGE QuasiQuotes       #-}
 {-# LANGUAGE Rank2Types        #-}
 {-# LANGUAGE TemplateHaskell   #-}
@@ -68,6 +69,7 @@ import           Data.Time.LocalTime
 import qualified Data.Binary         as Bin
 import           Data.Binary.Orphans()
 import           Data.Binary.Instances()
+import qualified Data.Aeson.KeyMap as KM
 
 import           Control.DeepSeq
 import           GHC.Generics (Generic)
@@ -80,6 +82,8 @@ import           Theory
 import Control.Monad.Except (ExceptT)
 import Main.TheoryLoader
 import Theory.Tools.Wellformedness (WfErrorReport)
+import Data.Aeson (ToJSON, toJSON, object, (.=))
+import Data.Aeson.Key (fromString)
 import Data.Tree (flatten)
 import Debug.Trace (trace, traceM)
 
@@ -101,6 +105,9 @@ type TheoryIdx = Int
 
 -- | Type synonym representing a map of theories.
 type TheoryMap = M.Map TheoryIdx (EitherTheoryInfo)
+
+instance ToJSON TheoryMap where
+  toJSON tm = toJSON (M.elems tm)
 
 -- | Type synonym representing a map of threads.
 type ThreadMap = M.Map T.Text ThreadId
@@ -189,6 +196,13 @@ data TheoryInfo = TheoryInfo
   , tiErrorsHtml :: String
   } deriving (Generic, Bin.Binary)
 
+instance ToJSON TheoryInfo where
+  toJSON (TheoryInfo idx theory time parent primary origin autoProver errorsHtml) =
+    object
+      [ fromString "index" .= idx
+      , fromString "theoryName" .= get thyName theory
+      ]
+
 -- | Data type containg both the theory and it's index, making it easier to
 -- pass the two around (since they are always tied to each other). We also
 -- keep some extra bookkeeping information.
@@ -202,6 +216,13 @@ data DiffTheoryInfo = DiffTheoryInfo
   , dtiAutoProver :: AutoProver      -- ^ The automatic prover to use.
   , dtiErrorsHtml :: String
   } deriving (Generic, Bin.Binary)
+
+instance ToJSON DiffTheoryInfo where
+  toJSON (DiffTheoryInfo idx theory time parent primary origin autoProver errorsHtml) =
+    object
+      [ fromString "index" .= idx
+      , fromString "theoryName" .= get diffThyName theory
+      ]
 
 
 -- | We use the ordering in order to display loaded theories to the user.
@@ -233,6 +254,16 @@ compareDTI (DiffTheoryInfo _ i1 t1 p1 a1 o1 _ _) (DiffTheoryInfo _ i2 t2 p2 a2 o
     ]
 
 data EitherTheoryInfo = Trace TheoryInfo | Diff DiffTheoryInfo deriving (Generic, Bin.Binary)
+
+instance ToJSON EitherTheoryInfo where
+  toJSON (Trace info) =
+    case toJSON info of
+      Object obj -> Object (KM.insert (fromString "theoryKind") (toJSON ("trace" :: String)) obj)
+      _ -> object [fromString "theoryKind" .= ("trace" :: String)]
+  toJSON (Diff info) =
+    case toJSON info of
+      Object obj -> Object (KM.insert (fromString "theoryKind") (toJSON ("diff" :: String)) obj)
+      _ -> object [fromString "theoryKind" .= ("diff" :: String)]
 
 -- instance Bin.Binary TheoryInfo
 -- instance Bin.Binary DiffTheoryInfo

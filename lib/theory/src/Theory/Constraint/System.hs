@@ -294,7 +294,8 @@ import           System.Directory                     (doesFileExist)
 import           System.FilePath
 import           Text.Show.Functions()
 import           Utils.Misc 
-
+import Data.Aeson (ToJSON, toJSON, object, (.=))
+import Data.Aeson.Key (fromString)
 ----------------------------------------------------------------------
 -- ClassifiedRules
 ----------------------------------------------------------------------
@@ -1934,3 +1935,6 @@ nonEmptyGraphDiff diffSys = not $
           (Just sys) -> M.null (L.get sNodes sys) && null (unsolvedActionAtoms sys) &&
                         null (unsolvedChains sys) &&
                         S.null (L.get sEdges sys) && S.null (L.get sLessAtoms sys)
+
+instance ToJSON System where
+  toJSON sys@System {} = toJSON (render (prettySystem sys))

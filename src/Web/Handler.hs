@@ -166,13 +166,17 @@ import Prover                       (mkSystem)
 import Theory.Text.Parser.Token()
 import Language.Haskell.TH()
 
+import Data.Aeson (object, (.=), ToJSON, toJSON)
+import Theory.Proof (annotateProof)
+import Theory.Proof
+
 -- Quasi-quotation syntax changed from GHC 6 to 7,
 -- so we need this switch in order to support both
-#if __GLASGOW_HASKELL__ >= 700
-#define HAMLET hamlet
-#else
-#define HAMLET $hamlet
-#endif
+
+
+
+
+
 
 
 ------------------------------------------------------------------------------
@@ -199,22 +203,22 @@ getTheory idx = do
 
 getLemmaPlaintext :: Int -> TheoryPath -> Handler String
 getLemmaPlaintext nr path = do
-    let lname = case path of 
+    let lname = case path of
             (TheoryEdit n) -> Just n
-            _ -> Nothing 
+            _ -> Nothing
     eitherTheory <- getTheory nr
-    let lemmaItem = case eitherTheory of 
-            (Just (Trace thy)) -> (\n -> lookupLemma n (tiTheory thy)) =<< lname 
+    let lemmaItem = case eitherTheory of
+            (Just (Trace thy)) -> (\n -> lookupLemma n (tiTheory thy)) =<< lname
             _ -> Nothing
     return $ fromMaybe "Enter your new Lemma" $ get lPlaintext <$> lemmaItem
 
 
 -- | modifies the proof of a lemma after editing (eg in the case of reuse lemmas)
 editProof :: Int -> String -> Handler (Either String TheoryIdx)
-editProof idx name = withTheory idx $ \ti -> do 
+editProof idx name = withTheory idx $ \ti -> do
     fromMaybe  (return (Left "Lemma not found")) $ editLemmaProof ti <$> lookupLemma name (tiTheory ti)
 
-    where 
+    where
         editLemmaProof ti (Lemma n m pt tq f a olp) = do
             let ctxt     = getProofContext (Lemma n m pt tq f a lp) (tiTheory ti)
                 preItems = getLemmaPreItems n (tiTheory ti)
@@ -225,13 +229,13 @@ editProof idx name = withTheory idx $ \ti -> do
             case maybe_nthy of
                 Nothing -> return $ Left "Lemma editing failed"
                 Just nthy -> do
-                    nidx <- replaceTheory (Just ti) Nothing nthy ("modified" ++ show idx) idx 
+                    nidx <- replaceTheory (Just ti) Nothing nthy ("modified" ++ show idx) idx
                     return $ Right nidx
 
-        newProof olp ctxt gsys = 
+        newProof olp ctxt gsys =
             case olp of
-                (LNode (ProofStep Invalidated _) s ) -> 
-                    let old_lp = fromMaybe olp (M.lookup "" s ) 
+                (LNode (ProofStep Invalidated _) s ) ->
+                    let old_lp = fromMaybe olp (M.lookup "" s )
                     in fromMaybe old_lp $ runProver (checkAndExtendProver (sorryProver Nothing)) ctxt 0 gsys old_lp
                 _ -> fromMaybe olp $ runProver (checkAndExtendProver (sorryProver Nothing)) ctxt 0 gsys olp
 
@@ -252,7 +256,7 @@ deleteLemma idx name = withTheory idx $ \ti -> do
         normalCase ti =
             case removeLemma name (tiTheory ti) of
                 Nothing -> return $ Left "Lemma editing failed"
-                Just nthy -> Right <$> replaceTheory (Just ti) Nothing nthy ("modified" ++ show idx) idx 
+                Just nthy -> Right <$> replaceTheory (Just ti) Nothing nthy ("modified" ++ show idx) idx
 
         reuseCase ti =
             case modifyLemma (lemmaFunc ti) (tiTheory ti) of
@@ -264,7 +268,7 @@ deleteLemma idx name = withTheory idx $ \ti -> do
         lemmaFunc ti (Lemma n pt m tq f a lp) =
             let currIdx = fromMaybe (-1) (lookupLemmaIndex name (tiTheory ti))
                 lIdx = fromMaybe 0 (lookupLemmaIndex n (tiTheory ti))
-            in if lIdx > currIdx 
+            in if lIdx > currIdx
                 then case lp of
                     LNode (ProofStep (Sorry Nothing) _) _ -> Lemma n pt m tq f a lp
                     LNode (ProofStep Invalidated _) _ -> Lemma n pt m tq f a lp
@@ -281,7 +285,7 @@ addLemma idx maybelemmaIndex (Lemma n pt _ tq f a lp) = withTheory idx $ \ti -> 
         gsys = mkSystem ctxt (theoryRestrictions (tiTheory ti)) preI f
     case formulaToGuarded f of
         Left d -> return $ Left $ render d
-        Right _ -> 
+        Right _ ->
             case maybelemmaIndex of
                 Nothing -> return $ Left "Lemma not found"
                 Just lemmaIndex -> do
@@ -663,12 +667,10 @@ modifyDiffTheory ti f fpath errResponse = do
 
 -- | The root handler lists all theories by default,
 -- or load a new theory if the corresponding form was submitted.
-getRootR :: Handler Html
+getRootR :: Handler Value
 getRootR = do
     theories <- getTheories
-    defaultLayout $ do
-      setTitle "Welcome to the Tamarin prover"
-      rootTpl theories
+    return $ object ["theories" .= toJSON theories]
 
 data File = File T.Text
   deriving Show
@@ -717,17 +719,60 @@ postRootR = do
 
 
 -- | Show overview over theory (framed layout).
-getOverviewR :: TheoryIdx -> TheoryPath -> Handler Html
-getOverviewR idx path = withTheory idx ( \ti -> do
-  renderF <- getUrlRender
-  renderParamsF <- getUrlRenderParams
-  lptxt <- getLemmaPlaintext idx path
-  defaultLayout $ do
-    getParams <- reqGetParams <$> getRequest
-    let renderParamsF' route = renderParamsF route getParams
-    overview <- liftIO $ overviewTpl renderF renderParamsF' ti path lptxt
-    setTitle (toHtml $ "Theory: " ++ get thyName (tiTheory ti))
-    overview )
+-- | What do we want in this JSON?
+-- | The whole theory
+-- | All lemmas and their proof states
+-- | Additional information like: Injective facts and their behavior?
+getOverviewR :: TheoryIdx -> TheoryPath -> Handler Value
+getOverviewR idx path =
+  withTheory idx $ \theoryInfo -> do
+    let theory = tiTheory theoryInfo
+    let lemmas = getLemmas theory
+    let lnames = map (get lName) lemmas
+    let quantifiers = map (get lTraceQuantifier) lemmas
+    -- Helper to annotate the proof
+    let prf lem = annotateProof (annotate lem) $ get lProof lem
+        annotate lem step cs =
+          case get lProof lem of
+            LNode (ProofStep Invalidated _) _ -> (psInfo step, InvalidatedProof)
+            _ -> (psInfo step, mconcat $ proofStepStatus step : incomplete ++ map snd cs)
+          where
+            incomplete = ([IncompleteProof | isNothing (psInfo step)])
+    -- Annotate the proofs
+    let proofs = map prf lemmas
+    let zipped = zip (zip lnames quantifiers) proofs
+    let sysString sys = render (prettySystem sys)
+    let encodeLemmaAsJSON ((name, quantifier), proof)= object [fromString "name" .= name, fromString "quantifier" .= show quantifier, fromString "proofTree" .= toJSON proof]
+    -- TODO: Fix encoding of proof
+    let lemmaJSON = map encodeLemmaAsJSON zipped
+    case path of
+      TheoryHelp          -> return $ object [fromString "theoryRaw" .= show theory
+                                              , "lemmas" .= lemmaJSON ]
+      TheoryProof l p     -> return $ object []
+      TheoryLemma l       -> return $ object []
+      TheoryRules         -> return $ object []
+      TheorySource k _ _  -> return $ object []
+      TheoryMethod {}     -> return $ object []
+      TheoryMessage       -> return $ object []
+      TheoryTactic        -> return $ object []
+      TheoryEdit _        -> return $ object []
+      TheoryDelete _      -> return $ object []
+      TheoryAdd _         -> return $ object []
+
+
+    -- return $ object [ fromString "theoryRaw" .= show theory
+    --                 , fromString "lemmas" .= () ]
+    -- )
+  -- withTheory idx ( \ti -> do
+  -- renderF <- getUrlRender
+  -- renderParamsF <- getUrlRenderParams
+  -- lptxt <- getLemmaPlaintext idx path
+  -- defaultLayout $ do
+  --   getParams <- reqGetParams <$> getRequest
+  --   let renderParamsF' route = renderParamsF route getParams
+  --   overview <- liftIO $ overviewTpl renderF renderParamsF' ti path lptxt
+  --   setTitle (toHtml $ "Theory: " ++ get thyName (tiTheory ti))
+  --   overview )
 
 getTheoryVerifyR :: TheoryIdx -> TheoryPath -> Handler RepJson
 getTheoryVerifyR  idx (TheoryProof l path) = do
@@ -751,16 +796,16 @@ postTheoryEditR idx (TheoryDelete l) = do
 
 
 postTheoryEditR idx path = do
-    mLemmaText <- lookupPostParam "lemma-text" 
+    mLemmaText <- lookupPostParam "lemma-text"
     let newlptxt = T.unpack $ fromMaybe "" mLemmaText
     renderParamsF <- getUrlRenderParams
     maudeSig <- withTheory idx $ \ti -> return $ get sigpMaudeSig . toSignaturePure . get thySignature $ tiTheory ti
     idx' <- case parsePlainLemma maudeSig newlptxt of
-        Left err -> return $ Left $ show err 
+        Left err -> return $ Left $ show err
         Right newl -> editLemma idx path newl
 
     case idx' of
-        Right i -> do 
+        Right i -> do
                     case mLemmaText of
                         Just _ ->  redirect (OverviewR i path)
                         Nothing -> defaultLayout $ do
@@ -1147,12 +1192,12 @@ getOptions = do
   simpl <- lookupGetParam "simplification"
   showAutosource <- isNothing <$> lookupGetParam "no-auto-sources"
   clustering <- lookupGetParam "clustering"
-  let simplificationLevel = fromMaybe SL2 (simpl >>= readMaybe . T.unpack) 
+  let simplificationLevel = fromMaybe SL2 (simpl >>= readMaybe . T.unpack)
       graphOptions = L.set goSimplificationLevel simplificationLevel $
                      L.set goCompress compress $
                      L.set goShowAutoSource showAutosource $
                      L.set goAbbreviate abbreviate $
-                     L.set goClustering (isJust clustering) $ 
+                     L.set goClustering (isJust clustering) $
                      defaultGraphOptions
   let dotOptions = L.set doNodeStyle nodeStyle defaultDotOptions
   return (graphOptions, dotOptions)
@@ -1475,10 +1520,10 @@ getDownloadTheoryR idx _ = do
 -- | prompt appending of the current theory's lemmas to their source file
 getAppendNewLemmasR :: TheoryIdx -> String -> Handler Value
 getAppendNewLemmasR idx _ = withTheory idx $ \ti -> do
-    let maybePath = case tiOrigin ti of 
-                        Local path -> Just path 
-                        _ ->  Nothing 
-        srcThy = fromMaybe "" maybePath 
+    let maybePath = case tiOrigin ti of
+                        Local path -> Just path
+                        _ ->  Nothing
+        srcThy = fromMaybe "" maybePath
         allptxts = foldl (\ p (Lemma _ pt modified _ _ _ _) -> if modified then p ++ "\n\n" ++ pt else p) "" (getLemmas (tiTheory ti))
 
     liftIO $ when (allptxts /= "" && isJust maybePath) $ appendFile srcThy $ "\n/*" ++ allptxts ++ "\n*/"

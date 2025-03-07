@@ -122,6 +122,8 @@ import           Control.Parallel.Strategies
 import           Theory.Constraint.Solver
 import           Theory.Model
 import           Theory.Text.Pretty
+import Data.Aeson (ToJSON, toJSON, object, (.=))
+import Data.Aeson.Key (fromString)
 
 
 
@@ -135,6 +137,13 @@ data LTree l a = LNode
      , children :: M.Map l (LTree l a)
      }
      deriving( Eq, Ord, Show )
+
+instance (ToJSON l, ToJSON a) => ToJSON (LTree l a) where
+  toJSON (LNode r c) =
+    object
+      [ fromString "value" .= r
+      , fromString "children" .= M.toList c -- Convert Map to a list of key-value pairs
+      ]
 
 instance Functor (LTree l) where
     fmap f (LNode r cs) = LNode (f r) (M.map (fmap f) cs)
@@ -189,6 +198,14 @@ data ProofStep a = ProofStep
      , psInfo   :: a
      }
      deriving( Eq, Ord, Show, Generic, NFData, Binary )
+
+instance (ToJSON a) => ToJSON (ProofStep a) where
+  toJSON (ProofStep method info) =
+    -- TODO: use encoding consisten with extraction encoding
+    object [ fromString "method" .= show method
+           , fromString "info" .= info
+           ]
+
 
 instance Functor ProofStep where
     fmap f (ProofStep m i) = ProofStep m (f i)
@@ -405,6 +422,15 @@ data ProofStatus =
                             --   i.e. all ends are either Completed or Unfinishable (if a trace is found, then the status is TraceFound)
        | InvalidatedProof   -- ^ The proof has been Invalidated (eg. by editing a reuse lemma)
     deriving ( Show, Generic, NFData, Binary, Eq )
+
+instance ToJSON ProofStatus where
+  toJSON UndeterminedProof = toJSON "UndeterminedProof"
+  toJSON CompleteProof     = toJSON "CompleteProof"
+  toJSON IncompleteProof   = toJSON "IncompleteProof"
+  toJSON TraceFound        = toJSON "TraceFound"
+  toJSON UnfinishableProof = toJSON "UnfinishableProof"
+  toJSON InvalidatedProof  = toJSON "InvalidatedProof"
+
 
 instance Semigroup ProofStatus where
     InvalidatedProof <> _                  = InvalidatedProof

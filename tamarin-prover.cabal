@@ -103,7 +103,7 @@ flag build-tests
 -- executables stanzas
 ----------------------
 
-executable tamarin-prover
+executable tamarin-prover-json
     default-language: GHC2021
 
     if flag(threaded)
@@ -122,7 +122,9 @@ executable tamarin-prover
     main-is:           Main.hs
 
     build-depends:
-        HUnit
+        aeson
+      , aeson-pretty
+      , HUnit
       , base
       , binary
       , binary-orphans
