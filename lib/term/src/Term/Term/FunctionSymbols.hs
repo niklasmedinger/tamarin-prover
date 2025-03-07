@@ -1,6 +1,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
   -- for ByteString
@@ -80,41 +82,76 @@ import           Control.DeepSeq
 
 import           Data.ByteString (ByteString)
 import           Extension.Data.ByteString ()
-import           Data.ByteString.Char8 ()
+import           Data.ByteString.Char8 (unpack)
 
 import           Data.Set (Set)
 import qualified Data.Set as S
 
+import Data.Aeson (ToJSON, toJSON, object, (.=))
+import Data.Aeson.Key (fromString)
 ----------------------------------------------------------------------
 -- Function symbols
 ----------------------------------------------------------------------
 
--- | AC function symbols.
+-- | Associative-Commutative symbols
 data ACSym = Union | Mult | Xor | NatPlus
   deriving (Eq, Ord, Typeable, Data, Show, Generic, NFData, Binary)
 
--- | A function symbol can be either Private (unknown to adversary) or Public.
+instance ToJSON ACSym where
+  toJSON Union   = toJSON ("Union" :: String)
+  toJSON Mult    = toJSON ("Mult" :: String)
+  toJSON Xor     = toJSON ("Xor" :: String)
+  toJSON NatPlus = toJSON ("NatPlus" :: String)
+
+-- | Function symbol privacy
 data Privacy = Private | Public
   deriving (Eq, Ord, Typeable, Data, Show, Generic, NFData, Binary)
 
--- | A function symbol can be either a constructor or a destructor in which
--- case it only applies if it reduces.
+instance ToJSON Privacy where
+  toJSON Private = toJSON ("Private" :: String)
+  toJSON Public  = toJSON ("Public" :: String)
+
+-- | Function constructability (Constructor or Destructor)
 data Constructability = Constructor | Destructor
   deriving (Eq, Ord, Typeable, Data, Show, Generic, NFData, Binary)
 
--- | NoEq function symbols (with respect to the background theory).
-type NoEqSym = (ByteString, (Int, Privacy,Constructability)) -- ^ operator name, arity, private, destructor
+instance ToJSON Constructability where
+  toJSON Constructor = toJSON ("Constructor" :: String)
+  toJSON Destructor  = toJSON ("Destructor" :: String)
 
--- | C(ommutative) function symbols
+-- | NoEq function symbols (name, arity, privacy, constructability)
+type NoEqSym = (ByteString, (Int, Privacy, Constructability))
+newtype NoEqSymWrapper = NoEqSymWrapper { inner :: NoEqSym }
+
+instance ToJSON NoEqSymWrapper where
+  toJSON (NoEqSymWrapper (name, (arity, privacy, constructability))) =
+    object [ fromString "name" .= unpack name
+           , fromString "arity" .= arity
+           , fromString "privacy" .= privacy
+           , fromString "constructability" .= constructability
+           ]
+
+-- | Commutative function symbols
 data CSym = EMap
   deriving (Eq, Ord, Typeable, Data, Show, Generic, NFData, Binary)
 
+instance ToJSON CSym where
+  toJSON EMap = object [fromString "type" .= ("EMap" :: String)]
+
 -- | Function symbols
-data FunSym = NoEq  NoEqSym   -- ^ a free function function symbol of a given arity
-            | AC    ACSym     -- ^ an AC function symbol, can be used n-ary
-            | C     CSym      -- ^ a C function symbol of a given arity
-            | List            -- ^ a free n-ary function symbol of TOP sort
+data FunSym
+  = NoEq NoEqSym   -- ^ A free function symbol of a given arity
+  | AC ACSym       -- ^ An AC function symbol, can be used n-ary
+  | C CSym         -- ^ A C function symbol of a given arity
+  | List           -- ^ A free n-ary function symbol of TOP sort
   deriving (Eq, Ord, Typeable, Data, Show, Generic, NFData, Binary)
+
+instance ToJSON FunSym where
+  toJSON (NoEq sym) = object [fromString "type" .= ("NoEq" :: String), fromString "symbol" .= (NoEqSymWrapper sym)]
+  toJSON (AC sym)   = object [fromString "type" .= ("AC" :: String), fromString "symbol" .= sym]
+  toJSON (C sym)    = object [fromString "type" .= ("C" :: String), fromString "symbol" .= sym]
+  toJSON List       = object [fromString "type" .= ("List" :: String)]
+
 
 -- | Function signatures.
 type FunSig = Set FunSym

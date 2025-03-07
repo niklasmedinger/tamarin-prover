@@ -94,6 +94,9 @@ import           Theory.Text.Pretty
 import           Term.LTerm
 import           Term.Substitution
 
+import Data.Aeson (ToJSON, toJSON, object, (.=))
+import Data.Aeson.Key (fromString)
+
 ------------------------------------------------------------------------------
 -- Types
 ------------------------------------------------------------------------------
@@ -101,10 +104,20 @@ import           Term.Substitution
 -- | Logical connectives.
 data Connective = And | Or | Imp | Iff
                 deriving( Eq, Ord, Show, Enum, Bounded, Data, Typeable, Generic, NFData, Binary )
+              
+instance ToJSON Connective where
+  toJSON And = toJSON "And"
+  toJSON Or  = toJSON "Or"
+  toJSON Imp = toJSON "Imp"
+  toJSON Iff = toJSON "Iff"
 
 -- | Quantifiers.
 data Quantifier = All | Ex
                 deriving( Eq, Ord, Show, Enum, Bounded, Data, Typeable, Generic, NFData, Binary )
+
+instance ToJSON Quantifier where
+  toJSON All = toJSON "Forall"
+  toJSON Ex  = toJSON "Exists"
 
 
 -- | First-order formulas in locally nameless representation with hints for the

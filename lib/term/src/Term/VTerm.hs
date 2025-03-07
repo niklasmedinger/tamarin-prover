@@ -47,6 +47,8 @@ import Extension.Prelude
 import Safe (fromJustNote)
 
 import Term.Term
+import Data.Aeson (ToJSON, toJSON, object, (.=))
+import Data.Aeson.Key (fromString)
 
 ----------------------------------------------------------------------
 -- Terms with constants and variables
@@ -55,6 +57,10 @@ import Term.Term
 -- | A Lit is either a constant or a variable. (@Const@ is taken by Control.Applicative)
 data Lit c v = Con c | Var v
   deriving (Eq, Ord, Data, Typeable, Generic, NFData, Binary)
+
+instance (ToJSON c, ToJSON v) => ToJSON (Lit c v) where
+    toJSON (Con x) = toJSON x
+    toJSON (Var x) = toJSON x
 
 -- | A VTerm is a term with constants and variables
 type VTerm c v = Term (Lit c v)

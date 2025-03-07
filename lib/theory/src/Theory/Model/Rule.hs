@@ -194,6 +194,9 @@ import           Theory.Sapic
 import Data.Char (chr, isDigit)
 import Data.List.Split (splitOn)
 
+import Data.Aeson (ToJSON, toJSON, object, (.=))
+import Data.Aeson.Key (fromString)
+
 -- import           Debug.Trace
 
 ------------------------------------------------------------------------------
@@ -225,7 +228,14 @@ newtype PremIdx = PremIdx { getPremIdx :: Int }
 newtype ConcIdx = ConcIdx { getConcIdx :: Int }
   deriving( Eq, Ord, Show, Enum, Data, Typeable, Binary, NFData )
 
--- | @lookupPrem i ru@ returns the @i@-th premise of rule @ru@, if possible.
+instance ToJSON PremIdx where
+  toJSON (PremIdx idx) =
+    object [ fromString "premIdx" .= idx ]
+
+instance ToJSON ConcIdx where
+  toJSON (ConcIdx idx) =
+    object [ fromString "concIdx" .= idx ]
+
 lookupPrem :: PremIdx -> Rule i -> Maybe LNFact
 lookupPrem i = (`atMay` getPremIdx i) . L.get rPrems
 

@@ -62,6 +62,8 @@ import           Extension.Data.ByteString ()
 
 import           Term.Term.Classes
 import           Term.Term.FunctionSymbols
+import Data.Aeson (ToJSON, toJSON, object, (.=))
+import Data.Aeson.Key (fromString)
 
 ----------------------------------------------------------------------
 -- Terms
@@ -72,6 +74,12 @@ import           Term.Term.FunctionSymbols
 data Term a = LIT a                 -- ^ atomic terms (constants, variables, ..)
             | FAPP FunSym [Term a]  -- ^ function applications
   deriving (Eq, Ord, Typeable, Data, Generic, NFData, Binary )
+
+instance ToJSON a => ToJSON (Term a) where
+  toJSON (LIT value) =
+    object [fromString "type" .= ("LIT" :: String), fromString "value" .= value]
+  toJSON (FAPP fun args) =
+    object [fromString "type" .= ("FAPP" :: String), fromString "function" .= fun, fromString "arguments" .= args]
 
 instance Functor Term  where
     fmap f (LIT a)      = LIT (f a)
