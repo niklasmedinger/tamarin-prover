@@ -199,7 +199,7 @@ data TheoryInfo = TheoryInfo
 instance ToJSON TheoryInfo where
   toJSON (TheoryInfo idx theory time parent primary origin autoProver errorsHtml) =
     object
-      [ fromString "index" .= idx
+      [ fromString "theoryIndex" .= idx
       , fromString "theoryName" .= get thyName theory
       ]
 
@@ -220,7 +220,7 @@ data DiffTheoryInfo = DiffTheoryInfo
 instance ToJSON DiffTheoryInfo where
   toJSON (DiffTheoryInfo idx theory time parent primary origin autoProver errorsHtml) =
     object
-      [ fromString "index" .= idx
+      [ fromString "theoryIndex" .= idx
       , fromString "theoryName" .= get diffThyName theory
       ]
 

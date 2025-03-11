@@ -67,7 +67,7 @@ library
       , transformers
       , uniplate
       , exceptions
-
+      , unordered-containers
       , tamarin-prover-utils
       , tamarin-prover-term
 

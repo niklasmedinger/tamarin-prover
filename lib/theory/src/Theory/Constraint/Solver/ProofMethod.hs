@@ -25,6 +25,7 @@ module Theory.Constraint.Solver.ProofMethod
     execProofMethod,
     execDiffProofMethod,
     isFinished,
+    toJSONProofMethodAndSourceRule,
 
     -- ** Heuristics
     rankProofMethods,
@@ -54,6 +55,7 @@ import Data.ByteString.Char8 qualified as BC
 import Data.ByteString.Lazy.Char8 qualified as BL
 import Data.Function (on)
 import Data.Label hiding (get)
+import Data.Text (Text, pack)
 import Data.Label qualified as L
 import Data.List (findIndex, groupBy, intercalate, isInfixOf, isPrefixOf, partition, sortBy, uncons)
 import Data.List.NonEmpty qualified as NE
@@ -77,8 +79,9 @@ import Theory.Constraint.Solver.Sources
 import Theory.Constraint.System
 import Theory.Model
 import Theory.Text.Pretty
-import Data.Aeson (encode, ToJSON, toJSON, object, (.=), Value)
+import Data.Aeson (Object, encode, ToJSON, toJSON, object, (.=), Value(..))
 import Data.Aeson.Key (fromString)
+import qualified Data.Aeson.KeyMap as KM
 ------------------------------------------------------------------------------
 -- Utilities
 ------------------------------------------------------------------------------
@@ -237,12 +240,7 @@ data ProofMethod
   deriving (Eq, Ord, Show, Generic, NFData, Binary)
 
 instance ToJSON ProofMethod where
-  toJSON (Sorry msg)         = object [fromString "proofMethod" .= ("Sorry" :: String), fromString "message" .= msg]
-  toJSON Simplify            = object [fromString "proofMethod" .= ("Simplify" :: String)]
-  toJSON (SolveGoal goal)    = object [fromString "proofMethod" .= ("SolveGoal" :: String), fromString "goal" .= goal]
-  toJSON Induction           = object [fromString "proofMethod" .= ("Induction" :: String)]
-  toJSON (Finished result)   = object [fromString "proofMethod" .= ("Finished" :: String), fromString "result" .= result]
-  toJSON Invalidated         = object [fromString "proofMethod" .= ("Invalidated" :: String)]
+  toJSON method = String (pack $ render (prettyProofMethod method))
 
 -- | Sound transformations of diff sequents.
 data DiffProofMethod
@@ -563,8 +561,10 @@ isFinished ctxt sys
     ogs = openGoals sys
     stFinished = finishedSubterms ctxt sys
 
-stripWhitespace :: String -> String
-stripWhitespace = filter (\c -> c /= '\n' && c /= '\t')
+
+toJSONProofMethodAndSourceRule :: (ProofMethod, (M.Map CaseName System, String)) -> Value
+toJSONProofMethodAndSourceRule (pm, (_, sr)) =
+    object [ (fromString "proofMethod", toJSON pm), (fromString "sourceRule", toJSON sr)]
 
 -- | Use a 'GoalRanking' to generate the ranked, list of possible
 -- 'ProofMethod's and their corresponding results in this 'ProofContext' and
@@ -576,7 +576,7 @@ rankProofMethods ::
   System ->
   [(ProofMethod, (M.Map CaseName System, String))]
 rankProofMethods ranking tactics ctxt sys =
-  let 
+  let
       Ranking (map solveGoalMethod -> goals) instr =
         rankGoals ctxt ranking tactics sys (openGoals sys)
 
@@ -602,24 +602,24 @@ rankProofMethods ranking tactics ctxt sys =
       bestMethod = head cases
 
       -- Prepare system JSON output
-      sysString = render (prettySystem sys)
       allMethodsJSON =
         object [ fromString "proofMethods" .= map toJSONProofMethodAndSourceRule cases ]
-      sysJSON = object [ fromString "constraintSystem" .= sysString ]
+      sysJSON = object [ fromString "constraintSystem" .= toJSON sys]
 
   in unsafePerformIO $ do
           -- Only write to the file if the filename contains "ExtractData"
           -- and the best method is not `Finished`
+          -- TODO: CLI flag for extracting data?
+          -- TODO: Concurrent logger/writer thread that we sent tasks to from here?
+          -- TODO: This would allow the concurrent DFS in proof search and we can
+          -- TODO: stop using stop-on-trace=SEQDFS on the cli.
           when ("ExtractData" `isInfixOf` fp && not (isFinishedMethod $ fst bestMethod)) $ do
-            -- putStrLn $ "Appending to file: " ++ fp
             appendFile fp (BL.unpack (Data.Aeson.encode sysJSON) ++ "\n")
             appendFile fp (BL.unpack (Data.Aeson.encode allMethodsJSON) ++ "\n")
-
           return cases
+  -- in
+  --   cases
   where
-    toJSONProofMethodAndSourceRule :: (ProofMethod, (M.Map CaseName System, String)) -> Value
-    toJSONProofMethodAndSourceRule (pm, (_, sr)) = object [ fromString "proofMethod" .= render (prettyProofMethod pm), fromString "sourceRule" .= sr ]
-
     execMethods = mapMaybe execMethod
 
     execMethod (m, expl) = do

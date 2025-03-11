@@ -138,6 +138,8 @@ data LTree l a = LNode
      }
      deriving( Eq, Ord, Show )
 
+-- TODO: Think about how to flatten the JSON for LTree, ProofStep, and Proof
+-- TODO: Add key for ProofStatus
 instance (ToJSON l, ToJSON a) => ToJSON (LTree l a) where
   toJSON (LNode r c) =
     object
@@ -201,9 +203,8 @@ data ProofStep a = ProofStep
 
 instance (ToJSON a) => ToJSON (ProofStep a) where
   toJSON (ProofStep method info) =
-    -- TODO: use encoding consisten with extraction encoding
-    object [ fromString "method" .= show method
-           , fromString "info" .= info
+    object [ fromString "proofMethod" .= method
+           , fromString "constraintSystem" .= info
            ]
 
 

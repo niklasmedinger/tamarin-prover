@@ -10,7 +10,8 @@ Portability :  non-portable
 
 {-# LANGUAGE
     OverloadedStrings, QuasiQuotes, TypeFamilies, FlexibleContexts,
-    RankNTypes, TemplateHaskell, CPP, MultiWayIf #-}
+    RankNTypes, TemplateHaskell, CPP, MultiWayIf, OverlappingInstances #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Web.Handler
   ( getOverviewR
@@ -164,11 +165,12 @@ import OpenTheory()
 import Web.Types()
 import Prover                       (mkSystem)
 import Theory.Text.Parser.Token()
-import Language.Haskell.TH()
+import Language.Haskell.TH(Extension (OverlappingInstances))
 
 import Data.Aeson (object, (.=), ToJSON, toJSON)
 import Theory.Proof (annotateProof)
 import Theory.Proof
+import Theory.Constraint.Solver.ProofMethod (toJSONProofMethodAndSourceRule)
 
 -- Quasi-quotation syntax changed from GHC 6 to 7,
 -- so we need this switch in order to support both
@@ -717,12 +719,19 @@ postRootR = do
       setTitle "Welcome to the Tamarin prover"
       rootTpl theories
 
+annotateProofWithStatus :: IncrementalProof -> Proof (Maybe System, ProofStatus)
+annotateProofWithStatus = annotateProof annotateProofWithStatus'
+
+annotateProofWithStatus' :: ProofStep (Maybe System) -> [(Maybe System, ProofStatus)] -> (Maybe System, ProofStatus)
+annotateProofWithStatus' step cs =
+  case step of
+    (ProofStep Invalidated _) -> (psInfo step, InvalidatedProof)
+    _ -> (psInfo step, mconcat $ proofStepStatus step : incomplete ++ map snd cs)
+  where
+    incomplete = [IncompleteProof | isNothing (psInfo step)]
+
 
 -- | Show overview over theory (framed layout).
--- | What do we want in this JSON?
--- | The whole theory
--- | All lemmas and their proof states
--- | Additional information like: Injective facts and their behavior?
 getOverviewR :: TheoryIdx -> TheoryPath -> Handler Value
 getOverviewR idx path =
   withTheory idx $ \theoryInfo -> do
@@ -730,25 +739,34 @@ getOverviewR idx path =
     let lemmas = getLemmas theory
     let lnames = map (get lName) lemmas
     let quantifiers = map (get lTraceQuantifier) lemmas
-    -- Helper to annotate the proof
-    let prf lem = annotateProof (annotate lem) $ get lProof lem
-        annotate lem step cs =
-          case get lProof lem of
-            LNode (ProofStep Invalidated _) _ -> (psInfo step, InvalidatedProof)
-            _ -> (psInfo step, mconcat $ proofStepStatus step : incomplete ++ map snd cs)
-          where
-            incomplete = ([IncompleteProof | isNothing (psInfo step)])
     -- Annotate the proofs
-    let proofs = map prf lemmas
+    let proofs = map (annotateProofWithStatus . get lProof) lemmas
     let zipped = zip (zip lnames quantifiers) proofs
-    let sysString sys = render (prettySystem sys)
-    let encodeLemmaAsJSON ((name, quantifier), proof)= object [fromString "name" .= name, fromString "quantifier" .= show quantifier, fromString "proofTree" .= toJSON proof]
-    -- TODO: Fix encoding of proof
+    let encodeLemmaAsJSON ((name, quantifier), proof)= object [fromString "name" .= name, fromString "quantifier" .= show quantifier, fromString "proofState" .= toJSON proof]
     let lemmaJSON = map encodeLemmaAsJSON zipped
     case path of
       TheoryHelp          -> return $ object [fromString "theoryRaw" .= show theory
                                               , "lemmas" .= lemmaJSON ]
-      TheoryProof l p     -> return $ object []
+      TheoryProof l p -> do
+              let maybeLemma = lookupLemma l theory
+              maybe (invalidArgs ["Lemma not found"])
+                    (\lemma -> do
+                      let ctxt = getProofContext lemma theory
+                          maybeProofState = resolveProofPath theory l p
+                      maybe (invalidArgs ["Proof path is invalid"])
+                            (\(proofState :: IncrementalProof) -> do
+                              let heuristic = selectHeuristic (tiAutoProver theoryInfo) ctxt
+                                  ranking = useHeuristic heuristic (length p)
+                                  tactic = selectTactic (tiAutoProver theoryInfo) ctxt
+                                  sys = psInfo $ root proofState
+                                  annotatedProofState = annotateProofWithStatus proofState
+                              maybe (invalidArgs ["Proof was not annotated with constraint system"])
+                                    (\s -> do
+                                      let proofMethods = rankProofMethods ranking tactic ctxt s
+                                      return $ object ["proofState" .= annotatedProofState, "proofMethods" .= map toJSONProofMethodAndSourceRule proofMethods]
+                                        ) sys
+                            ) maybeProofState
+                    ) maybeLemma
       TheoryLemma l       -> return $ object []
       TheoryRules         -> return $ object []
       TheorySource k _ _  -> return $ object []
@@ -758,6 +776,18 @@ getOverviewR idx path =
       TheoryEdit _        -> return $ object []
       TheoryDelete _      -> return $ object []
       TheoryAdd _         -> return $ object []
+
+    -- proofMethods            = rankProofMethods ranking tactic ctxt
+instance ToJSON (Proof (Maybe System, ProofStatus)) where
+  toJSON (LNode (ProofStep method (sys, status)) cases) =
+    object
+      [ fromString "proofStatus" .= status
+      , fromString "constraintSystem" .= sys
+      , fromString "proofMethod" .= method
+      , fromString "cases" .= M.toList cases
+      -- , fromString "proofMethods" .= proofMethods
+      ]
+      -- where
 
 
     -- return $ object [ fromString "theoryRaw" .= show theory
