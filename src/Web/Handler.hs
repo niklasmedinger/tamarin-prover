@@ -170,7 +170,6 @@ import Language.Haskell.TH(Extension (OverlappingInstances))
 import Data.Aeson (object, (.=), ToJSON, toJSON)
 import Theory.Proof (annotateProof)
 import Theory.Proof
-import Theory.Constraint.Solver.ProofMethod (toJSONProofMethodAndSourceRule)
 
 -- Quasi-quotation syntax changed from GHC 6 to 7,
 -- so we need this switch in order to support both
@@ -636,9 +635,14 @@ modifyTheory ti f fpath errResponse = do
       Left e           -> return (excResponse e)
       Right Nothing    -> return (responseToJson errResponse)
       Right (Just thy) -> do
+        -- let newPath = renderTheoryPath $ fpath thy
+        let newPath = case fpath thy of
+                        TheoryProof _ path -> Just $ map prefixWithUnderscore path
+                        _                  -> Nothing
         newThyIdx <- putTheory (Just ti) Nothing thy rep
-        newUrl <- getUrlRender <*> pure (OverviewR newThyIdx (fpath thy))
-        return . responseToJson $ JsonRedirect newUrl
+        let json = object [fromString "nextProofpath" .= newPath, fromString "newTheoryIndex" .= newThyIdx]
+        -- newUrl <- getUrlRender <*> pure (OverviewR newThyIdx (fpath thy))
+        return json
   where
    excResponse e = responseToJson
                      (JsonAlert $ "Last request failed with exception: " `T.append` (T.pack (show e)))
@@ -672,7 +676,7 @@ modifyDiffTheory ti f fpath errResponse = do
 getRootR :: Handler Value
 getRootR = do
     theories <- getTheories
-    return $ object ["theories" .= toJSON theories]
+    return $ toJSON theories
 
 data File = File T.Text
   deriving Show
@@ -719,16 +723,39 @@ postRootR = do
       setTitle "Welcome to the Tamarin prover"
       rootTpl theories
 
-annotateProofWithStatus :: IncrementalProof -> Proof (Maybe System, ProofStatus)
-annotateProofWithStatus = annotateProof annotateProofWithStatus'
+annotateProofWithStatusAndRankedProofMethods :: (System -> [ProofMethod]) -> IncrementalProof -> Proof (Maybe System, ProofStatus, [ProofMethod])
+annotateProofWithStatusAndRankedProofMethods f = annotateProof $ annotateProofWithStatusAndRankedProofMethods' f
 
-annotateProofWithStatus' :: ProofStep (Maybe System) -> [(Maybe System, ProofStatus)] -> (Maybe System, ProofStatus)
-annotateProofWithStatus' step cs =
+annotateProofWithStatusAndRankedProofMethods' :: (System -> [ProofMethod]) -> ProofStep (Maybe System) -> [(Maybe System, ProofStatus, [ProofMethod])] -> (Maybe System, ProofStatus, [ProofMethod])
+annotateProofWithStatusAndRankedProofMethods' f step cs =
   case step of
-    (ProofStep Invalidated _) -> (psInfo step, InvalidatedProof)
-    _ -> (psInfo step, mconcat $ proofStepStatus step : incomplete ++ map snd cs)
+    (ProofStep Invalidated _) -> (psInfo step, InvalidatedProof, [])
+    _ -> (psInfo step, mconcat $ proofStepStatus step : incomplete ++ map (\(_, s, _) -> s) cs, rankedProofMethods)
   where
     incomplete = [IncompleteProof | isNothing (psInfo step)]
+    -- Empty list of proof methods if no system is present.
+    -- Otherwise use the ranking function f to rank them.
+    rankedProofMethods = maybe [] f $ psInfo step
+
+createProofStateJSON :: TheoryInfo -> Lemma IncrementalProof -> ProofPath -> Maybe Value
+createProofStateJSON theoryInfo lemma p =
+  fmap (toJSON . annotateProofWithStatusAndRankedProofMethods (map fst . rankingFunction)
+        ) maybeProofState
+  where
+    theory = tiTheory theoryInfo
+    ctxt = getProofContext lemma theory
+    heuristic = selectHeuristic (tiAutoProver theoryInfo) ctxt
+    ranking = useHeuristic heuristic (length p)
+    tactic = selectTactic (tiAutoProver theoryInfo) ctxt
+    rankingFunction = rankProofMethods ranking tactic ctxt
+    maybeProofState = resolveProofPath theory (get lName lemma) p
+
+createLemmaJSON :: TheoryInfo -> Lemma IncrementalProof -> Value
+createLemmaJSON theoryInfo lemma =
+  object [ fromString "name" .= get lName lemma
+         , fromString "quantifier" .= show (get lTraceQuantifier lemma)
+         , fromString "proofState" .= createProofStateJSON theoryInfo lemma [] ]
+
 
 
 -- | Show overview over theory (framed layout).
@@ -736,73 +763,31 @@ getOverviewR :: TheoryIdx -> TheoryPath -> Handler Value
 getOverviewR idx path =
   withTheory idx $ \theoryInfo -> do
     let theory = tiTheory theoryInfo
-    let lemmas = getLemmas theory
-    let lnames = map (get lName) lemmas
-    let quantifiers = map (get lTraceQuantifier) lemmas
-    -- Annotate the proofs
-    let proofs = map (annotateProofWithStatus . get lProof) lemmas
-    let zipped = zip (zip lnames quantifiers) proofs
-    let encodeLemmaAsJSON ((name, quantifier), proof)= object [fromString "name" .= name, fromString "quantifier" .= show quantifier, fromString "proofState" .= toJSON proof]
-    let lemmaJSON = map encodeLemmaAsJSON zipped
     case path of
-      TheoryHelp          -> return $ object [fromString "theoryRaw" .= show theory
-                                              , "lemmas" .= lemmaJSON ]
+      TheoryHelp -> do
+        let lemmas = getLemmas theory
+        let lemmasJSON = map (createLemmaJSON theoryInfo) lemmas
+        return $ object [ fromString "theoryRaw" .= show theory
+                        , fromString "lemmas" .= lemmasJSON ]
       TheoryProof l p -> do
-              let maybeLemma = lookupLemma l theory
-              maybe (invalidArgs ["Lemma not found"])
-                    (\lemma -> do
-                      let ctxt = getProofContext lemma theory
-                          maybeProofState = resolveProofPath theory l p
-                      maybe (invalidArgs ["Proof path is invalid"])
-                            (\(proofState :: IncrementalProof) -> do
-                              let heuristic = selectHeuristic (tiAutoProver theoryInfo) ctxt
-                                  ranking = useHeuristic heuristic (length p)
-                                  tactic = selectTactic (tiAutoProver theoryInfo) ctxt
-                                  sys = psInfo $ root proofState
-                                  annotatedProofState = annotateProofWithStatus proofState
-                              maybe (invalidArgs ["Proof was not annotated with constraint system"])
-                                    (\s -> do
-                                      let proofMethods = rankProofMethods ranking tactic ctxt s
-                                      return $ object ["proofState" .= annotatedProofState, "proofMethods" .= map toJSONProofMethodAndSourceRule proofMethods]
-                                        ) sys
-                            ) maybeProofState
-                    ) maybeLemma
-      TheoryLemma l       -> return $ object []
-      TheoryRules         -> return $ object []
-      TheorySource k _ _  -> return $ object []
-      TheoryMethod {}     -> return $ object []
-      TheoryMessage       -> return $ object []
-      TheoryTactic        -> return $ object []
-      TheoryEdit _        -> return $ object []
-      TheoryDelete _      -> return $ object []
-      TheoryAdd _         -> return $ object []
+        let maybeLemma = lookupLemma l theory
+        maybe (invalidArgs ["Lemma not found"])
+          (\lemma -> do
+            maybe (invalidArgs ["Invalid proof path"])
+              return (createProofStateJSON theoryInfo lemma p)
+          ) maybeLemma
+      -- We don't care about any other cases for now
+      _ -> return $ object []
 
-    -- proofMethods            = rankProofMethods ranking tactic ctxt
-instance ToJSON (Proof (Maybe System, ProofStatus)) where
-  toJSON (LNode (ProofStep method (sys, status)) cases) =
+instance ToJSON (Proof (Maybe System, ProofStatus, [ProofMethod])) where
+  toJSON (LNode (ProofStep method (sys, status, methods)) cases) =
     object
-      [ fromString "proofStatus" .= status
-      , fromString "constraintSystem" .= sys
-      , fromString "proofMethod" .= method
-      , fromString "cases" .= M.toList cases
-      -- , fromString "proofMethods" .= proofMethods
+      [ "proofStatus" .= status
+      , "constraintSystem" .= sys
+      , "chosenProofMethod" .= method
+      , "cases" .= M.toList cases
+      , "proofMethods" .= methods
       ]
-      -- where
-
-
-    -- return $ object [ fromString "theoryRaw" .= show theory
-    --                 , fromString "lemmas" .= () ]
-    -- )
-  -- withTheory idx ( \ti -> do
-  -- renderF <- getUrlRender
-  -- renderParamsF <- getUrlRenderParams
-  -- lptxt <- getLemmaPlaintext idx path
-  -- defaultLayout $ do
-  --   getParams <- reqGetParams <$> getRequest
-  --   let renderParamsF' route = renderParamsF route getParams
-  --   overview <- liftIO $ overviewTpl renderF renderParamsF' ti path lptxt
-  --   setTitle (toHtml $ "Theory: " ++ get thyName (tiTheory ti))
-  --   overview )
 
 getTheoryVerifyR :: TheoryIdx -> TheoryPath -> Handler RepJson
 getTheoryVerifyR  idx (TheoryProof l path) = do

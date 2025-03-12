@@ -1917,28 +1917,14 @@ isInterestingDiffMethod (DiffSorry _) = True
 isInterestingDiffMethod DiffAttack    = True
 isInterestingDiffMethod _             = False
 
--- Get 'next' smart theory path.
+-- We have thrown everything that is not needed for our JSON Api out of this function
 nextSmartThyPath :: ClosedTheory -> TheoryPath -> TheoryPath
 nextSmartThyPath thy = go
   where
-    go TheoryHelp                         = TheoryMessage
-    go TheoryMessage                      = TheoryRules
-    go TheoryRules                        = TheoryTactic
-    go TheoryTactic                       = TheorySource RawSource 0 0
-    go (TheorySource RawSource _ _)       = TheorySource RefinedSource 0 0
-    go (TheorySource RefinedSource   _ _) = fromMaybe TheoryHelp firstLemma
-    go (TheoryEdit  _ )                   = TheoryHelp 
-    go (TheoryAdd _ )                     = TheoryHelp
-    go (TheoryDelete _)                   = TheoryHelp
-    go (TheoryLemma lemma)                = TheoryProof lemma []
     go (TheoryProof l p)
       | Just nextPath <- getNextPath l p = TheoryProof l nextPath
-      | Just nextLemma <- getNextLemma l = TheoryProof nextLemma []
-      | otherwise                        = TheoryProof l p
-    go path@(TheoryMethod _ _ _)         = path
-
-    lemmas = map (\l -> (get lName l, l)) $ getLemmas thy
-    firstLemma = flip TheoryProof [] . fst <$> listToMaybe lemmas
+      | otherwise                        = TheoryHelp
+    go _         = TheoryHelp
 
     getNextPath lemmaName path = do
       lemma <- lookupLemma lemmaName thy
@@ -1946,8 +1932,6 @@ nextSmartThyPath thy = go
       case dropWhile ((/= path) . fst) paths of
         []        -> Nothing
         nextSteps -> listToMaybe . map fst . filter (isInterestingMethod . snd) $ tail nextSteps
-
-    getNextLemma lemmaName = getNextElement (== lemmaName) (map fst lemmas)
 
 -- Get 'next' smart theory path.
 nextSmartDiffThyPath :: ClosedDiffTheory -> DiffTheoryPath -> DiffTheoryPath

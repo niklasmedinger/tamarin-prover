@@ -53,6 +53,8 @@ module Web.Types
   , imageFormatMIME
   , OutputFormat(..)
   , OutputCommand(..)
+  , renderTheoryPath
+  , prefixWithUnderscore
   )
 where
 
@@ -104,10 +106,10 @@ import Debug.Trace (trace, traceM)
 type TheoryIdx = Int
 
 -- | Type synonym representing a map of theories.
-type TheoryMap = M.Map TheoryIdx (EitherTheoryInfo)
+type TheoryMap = M.Map TheoryIdx EitherTheoryInfo
 
 instance ToJSON TheoryMap where
-  toJSON tm = toJSON (M.elems tm)
+  toJSON tm = object [fromString (getEitherTheoryName info) .= toJSON info | info <- M.elems tm]
 
 -- | Type synonym representing a map of threads.
 type ThreadMap = M.Map T.Text ThreadId

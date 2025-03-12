@@ -25,8 +25,6 @@ module Theory.Constraint.Solver.ProofMethod
     execProofMethod,
     execDiffProofMethod,
     isFinished,
-    toJSONProofMethodAndSourceRule,
-
     -- ** Heuristics
     rankProofMethods,
     rankDiffProofMethods,
@@ -562,10 +560,6 @@ isFinished ctxt sys
     stFinished = finishedSubterms ctxt sys
 
 
-toJSONProofMethodAndSourceRule :: (ProofMethod, (M.Map CaseName System, String)) -> Value
-toJSONProofMethodAndSourceRule (pm, (_, sr)) =
-    object [ (fromString "proofMethod", toJSON pm), (fromString "sourceRule", toJSON sr)]
-
 -- | Use a 'GoalRanking' to generate the ranked, list of possible
 -- 'ProofMethod's and their corresponding results in this 'ProofContext' and
 -- for this 'System'.
@@ -603,7 +597,7 @@ rankProofMethods ranking tactics ctxt sys =
 
       -- Prepare system JSON output
       allMethodsJSON =
-        object [ fromString "proofMethods" .= map toJSONProofMethodAndSourceRule cases ]
+        object [ fromString "proofMethods" .= map fst cases ]
       sysJSON = object [ fromString "constraintSystem" .= toJSON sys]
 
   in unsafePerformIO $ do
