@@ -177,6 +177,10 @@ def proving():
         if proof_path is None:
             break
         else:
+            # Warning: You should always give a proof path when querying for the
+            # proof state in a hot loop. The reason is that the resulting
+            # JSON grows exponentially in size in the number of proof steps
+            # because it contains the whole proof tree
             proof_state = json.loads(
                 c.get_proof_state(
                     theory_kind, theory_index, lemma_name, proof_path
