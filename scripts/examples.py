@@ -152,21 +152,30 @@ def proving():
     theory = r["Tutorial"]
     theory_kind = theory[THEORY_KIND]
     theory_index = theory[THEORY_INDEX]
-    lemma_name = "Client_session_key_secrecy"
+    r = json.loads(c.get_theory_overview(theory_kind, theory_index).text)
+
+    # This is an `exists-trace` lemma
+    lemma_name = "Client_session_key_honest_setup"
 
     # We can define a custom function for ranking proof methods
-    def custom_heuristic(proof_methods):
+    def custom_heuristic(proof_methods, constraint_system):
         # proof methods indices are 1-based.
         return random.randrange(1, len(proof_methods) + 1)
 
     # Setup variables needed for proving
-    r = c.get_proof_state(theory_kind, theory_index, lemma_name)
-    proof_state = json.loads(r.text)
-    method_index = custom_heuristic(proof_state[PROOF_METHODS])
     proof_path = []
 
     # Apply proof methods until proof is finished
     while True:
+        # Warning: You should always give a proof path when querying for the
+        # proof state in a hot loop. The reason is that the resulting
+        # JSON grows exponentially in size in the number of proof steps
+        # because it contains the whole proof tree.
+        r = c.get_proof_state(theory_kind, theory_index, lemma_name, proof_path)
+        proof_state = json.loads(r.text)
+        method_index = custom_heuristic(
+            proof_state[PROOF_METHODS], proof_state[CONSTRAINT_SYSTEM]
+        )
         r = c.apply_method_at_path(
             theory_kind, theory_index, lemma_name, method_index, proof_path
         )
@@ -176,16 +185,6 @@ def proving():
         proof_path = r[NEXT_PROOF_PATH]
         if proof_path is None:
             break
-        else:
-            # Warning: You should always give a proof path when querying for the
-            # proof state in a hot loop. The reason is that the resulting
-            # JSON grows exponentially in size in the number of proof steps
-            # because it contains the whole proof tree
-            proof_state = json.loads(
-                c.get_proof_state(
-                    theory_kind, theory_index, lemma_name, proof_path
-                ).text
-            )
 
     r = c.get_proof_state(theory_kind, theory_index, lemma_name)
     r = json.loads(r.text)
@@ -198,10 +197,10 @@ if __name__ == "__main__":
 
     # Shows basic commands, e.g., getting information about the loaded
     # theories and their lemmas
-    overview()
+    # overview()
 
     # Shows how the proof state works and how you can apply prove methods
     # proof_state()
 
     # Proving whole statements
-    # proving()
+    proving()
