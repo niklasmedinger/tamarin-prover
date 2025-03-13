@@ -1,7 +1,20 @@
 import requests
-import json
 
-ENCODING = "utf-8"
+THEORY_INDEX = "theoryIndex"
+THEORY_KIND = "theoryKind"
+THEORY_NAME = "theoryName"
+THEORY_RAW = "theoryRaw"
+LEMMAS = "lemmas"
+LEMMA_NAME = "name"
+PROOF_STATE = "proofState"
+QUANTIFIER = "quantifier"
+CASES = "cases"
+CHOSEN_PROOF_METHOD = "chosenProofMethod"
+PROOF_STATUS = "proofStatus"
+CONSTRAINT_SYSTEM = "constraintSystem"
+PROOF_METHODS = "proofMethods"
+NEW_THEORY_INDEX = "newTheoryIndex"
+NEXT_PROOF_PATH = "nextProofpath"
 
 
 class TamarinClient:
@@ -54,6 +67,7 @@ class TamarinClient:
     Lemma = { 'name': String                                -- The name of the lemma
             , 'proofState': Proof                           -- The (partial) proof of the lemma
             , 'quantifier': ('AllTraces' | 'ExistsTrace') } -- The quantifier of the lemma
+
     Proof = { 'cases': [ Proof ]
             , 'chosenProofMethod': String
             , 'proofStatus': (IncompleteProof | CompleteProof
@@ -74,8 +88,7 @@ class TamarinClient:
     """
     Gets a view of the proof state at a given proof path.
 
-    Returns a JSON with the following schema:
-    { 'proofState': Proof } -- The state of the proof
+    Returns a `Proof` JSON. See above for its schema. 
     """
 
     def get_proof_state(self, theory_kind, theory_index, lemma, proof_path=[]):
