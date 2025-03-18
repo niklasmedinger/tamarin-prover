@@ -145,7 +145,7 @@ import           Logic.Connectives
 
 import           Term.Rewriting.Definitions
 import           Term.VTerm
-import Data.Aeson (ToJSON, toJSON, object, (.=))
+import Data.Aeson (ToJSON, toJSON, object, (.=), Value(..))
 import Data.Aeson.Key (fromString)
 
 ------------------------------------------------------------------------------
@@ -222,6 +222,12 @@ newtype NameId = NameId { getNameId :: String }
 data NameTag = FreshName | PubName | NodeName | NatName
     deriving( Eq, Ord, Show, Typeable, Data, Generic, NFData, Binary )
 
+instance ToJSON NameTag where
+    toJSON FreshName = toJSON ("FreshName" :: String)
+    toJSON PubName = toJSON ("PubName" :: String)
+    toJSON NodeName = toJSON ("NodeName" :: String)
+    toJSON NatName = toJSON ("NatName" :: String)
+
 -- | Names.
 data Name = Name {nTag :: NameTag, nId :: NameId}
     deriving( Eq, Ord, Typeable, Data, Generic, NFData, Binary)
@@ -229,6 +235,11 @@ data Name = Name {nTag :: NameTag, nId :: NameId}
 -- | Terms with literals containing names and arbitrary variables.
 type NTerm v = VTerm Name v
 
+instance ToJSON Name where
+  toJSON (Name tag id) =
+    object [ fromString "name" .= toJSON (show id)
+           , fromString "args" .= toJSON ([] :: String)
+           , fromString "type"  .= toJSON tag]
 
 -- Instances
 ------------
@@ -288,10 +299,10 @@ data LVar = LVar
      deriving( Typeable, Data, Generic, NFData, Binary )
 
 instance ToJSON LVar where
-  toJSON (LVar name sort idx) =
-    object [ fromString "lvarName" .= name
-           , fromString "lvarSort" .= sort
-           , fromString "lvarIdx"  .= idx ]
+  toJSON (LVar name _ idx) =
+    object [ fromString "name" .= toJSON (name ++ "." ++ show idx)
+           , fromString "args" .= toJSON ([] :: String)
+           , fromString "type"  .= toJSON "Lvar" ]
 
 -- | An alternative name for logical variables, which are intented to be
 -- variables of sort 'LSortNode'.

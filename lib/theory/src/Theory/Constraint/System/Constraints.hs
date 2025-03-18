@@ -85,6 +85,11 @@ data Edge = Edge {
     }
   deriving (Show, Ord, Eq, Data, Typeable, Generic, NFData, Binary)
 
+instance ToJSON Edge where
+  toJSON (Edge src tgt) = object
+    [ (fromString "source", toJSON src)
+    , (fromString "target", toJSON tgt)]
+
 -- | A reason to explain the less
 -- | Order is from the most important to the least important 
 data Reason = Formula | InjectiveFacts | Fresh | Adversary | NormalForm

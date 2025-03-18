@@ -131,10 +131,6 @@ import Data.Aeson.Key (fromString)
 data Multiplicity = Persistent | Linear
                   deriving( Eq, Ord, Show, Typeable, Data, Generic, NFData, Binary )
                 
-instance ToJSON Multiplicity where
-    toJSON Persistent = object [fromString "multiplicity" .= ("Persistent" :: String)]
-    toJSON Linear     = object [fromString "multiplicity" .= ("Linear" :: String)]
-
 -- | Fact tags/symbols
 data FactTag = ProtoFact Multiplicity String Int
                -- ^ A protocol fact together with its arity and multiplicity.
@@ -150,19 +146,15 @@ data FactTag = ProtoFact Multiplicity String Int
     deriving( Eq, Ord, Show, Typeable, Data, Generic, NFData, Binary )
 
 instance ToJSON FactTag where
-  toJSON (ProtoFact mul name arity) = object 
-    [ fromString "type" .= ("ProtoFact" :: String)
-    , fromString "multiplicity" .= mul
-    , fromString "name" .= name
-    , fromString "arity" .= arity ]
-  
-  toJSON FreshFact = object [fromString "type" .= ("FreshFact" :: String)]
-  toJSON OutFact = object [fromString "type" .= ("OutFact" :: String)]
-  toJSON InFact = object [fromString "type" .= ("InFact" :: String)]
-  toJSON KUFact = object [fromString "type" .= ("KUFact" :: String)]
-  toJSON KDFact = object [fromString "type" .= ("KDFact" :: String)]
-  toJSON DedFact = object [fromString "type" .= ("DedFact" :: String)]
-  toJSON TermFact = object [fromString "type" .= ("TermFact" :: String)]
+  toJSON (ProtoFact Linear name _) = toJSON name
+  toJSON (ProtoFact Persistent name _) = toJSON ("!" ++ name)
+  toJSON FreshFact = toJSON "Fresh"
+  toJSON OutFact = toJSON "Out"
+  toJSON InFact = toJSON "In"
+  toJSON KUFact = toJSON "KU"
+  toJSON KDFact = toJSON "KD"
+  toJSON DedFact = toJSON "Ded"
+  toJSON TermFact = toJSON "Term"
 
 
 -- | Annotations are properties thhat might be used elsewhere (e.g. in
@@ -185,10 +177,10 @@ data Fact t = Fact
     deriving( Show, Typeable, Data, Generic, NFData, Binary )
 
 instance ToJSON t => ToJSON (Fact t) where
-  toJSON (Fact tag annotations terms) =
-    object [ fromString "factTag" .= tag
-           , fromString "factAnnotations" .= S.toList annotations
-           , fromString "factTerms" .= terms ]
+  toJSON (Fact tag _ terms) =
+    object [ fromString "name" .= tag
+           , fromString "type" .= "Fact"
+           , fromString "args" .= terms ]
 
 
 -- Instances

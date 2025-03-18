@@ -76,10 +76,9 @@ data Term a = LIT a                 -- ^ atomic terms (constants, variables, ..)
   deriving (Eq, Ord, Typeable, Data, Generic, NFData, Binary )
 
 instance ToJSON a => ToJSON (Term a) where
-  toJSON (LIT value) =
-    object [fromString "type" .= ("LIT" :: String), fromString "value" .= value]
+  toJSON (LIT value) = toJSON value
   toJSON (FAPP fun args) =
-    object [fromString "type" .= ("FAPP" :: String), fromString "function" .= fun, fromString "arguments" .= args]
+    object [fromString "type" .= ("Fapp" :: String), fromString "name" .= fun, fromString "args" .= args]
 
 instance Functor Term  where
     fmap f (LIT a)      = LIT (f a)

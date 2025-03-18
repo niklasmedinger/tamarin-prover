@@ -282,7 +282,7 @@ import           GHC.IO                               (unsafePerformIO)
 
 import           Logic.Connectives
 import           Theory.Constraint.Solver.AnnotatedGoals
-import           Theory.Constraint.System.Constraints 
+import           Theory.Constraint.System.Constraints
 --import           Theory.Constraint.Solver.Heuristics
 import           Theory.Model
 import           Theory.Text.Pretty
@@ -293,9 +293,10 @@ import           Theory.Tools.InjectiveFactInstances
 import           System.Directory                     (doesFileExist)
 import           System.FilePath
 import           Text.Show.Functions()
-import           Utils.Misc 
-import Data.Aeson (ToJSON, toJSON, object, (.=))
+import           Utils.Misc
+import Data.Aeson (ToJSON, toJSON, object, (.=), Value(..))
 import Data.Aeson.Key (fromString)
+import Term.Builtin.Convenience (lx1)
 ----------------------------------------------------------------------
 -- ClassifiedRules
 ----------------------------------------------------------------------
@@ -461,7 +462,7 @@ instance NFData (Prio a) where
 
 instance Binary (Prio a) where
     put p = put $ show p
-    get = return (Prio Nothing "" [] []) 
+    get = return (Prio Nothing "" [] [])
 
 -- | Derio keeps a list of function that aim at recognizing some goals based on the state of the 
 -- | System, the ProofContext and the Annotated Goal considered. If one of the function returns 
@@ -662,7 +663,7 @@ stringToGoalRankingDiff :: Bool -> String -> GoalRanking ProofContext
 stringToGoalRankingDiff noOracle s = fromMaybe
     (error $ render $ sep $ map text $ lines $ "Unknown proof method ranking '" ++ s
         ++ "'. Use one of the following:\n" ++ listGoalRankingsDiff noOracle)
-    $ stringToGoalRankingDiffMay noOracle s  
+    $ stringToGoalRankingDiffMay noOracle s
 
 listGoalRankings :: Bool -> String
 listGoalRankings noOracle = M.foldMapWithKey
@@ -701,7 +702,7 @@ goalRankingName ranking =
    where
      loopStatus b = " (loop breakers " ++ (if b then "allowed" else "delayed") ++ ")"
      printOracle o@(Oracle workDir relPath) =
-      if isNothing relPath 
+      if isNothing relPath
         then fromMaybe "" workDir </> "theory_filename.oracle"
         else oraclePath o
 
@@ -1218,7 +1219,7 @@ data Trivalent = TTrue | TFalse | TUnknown deriving (Show, Eq)
 -- | Computes the mirror dependency graph and evaluates whether the restrictions hold.
 -- Returns Just True and a list of mirrors if all hold, Just False and a list of attacks (if found) if at least one does not hold and Nothing otherwise.
 getMirrorDGandEvaluateRestrictions :: DiffProofContext -> DiffSystem -> Bool -> (Trivalent, [System])
-getMirrorDGandEvaluateRestrictions dctxt dsys isSolved = 
+getMirrorDGandEvaluateRestrictions dctxt dsys isSolved =
     case (L.get dsSide dsys, L.get dsSystem dsys) of
           (Nothing,   _       ) -> (TFalse, [])
           (Just _ , Nothing   ) -> (TFalse, [])
@@ -1937,4 +1938,47 @@ nonEmptyGraphDiff diffSys = not $
                         S.null (L.get sEdges sys) && S.null (L.get sLessAtoms sys)
 
 instance ToJSON System where
-  toJSON sys@System {} = toJSON (render (prettySystem sys))
+  toJSON sys = toJSONSystem sys
+
+newtype NodeWrapper = NodeWrapper (NodeId, RuleACInst)
+
+instance ToJSON NodeWrapper where
+  toJSON (NodeWrapper (nodeId, rule@(Rule _ prems acts concs _))) = object
+    [ fromString "node_id" .= toJSON nodeId
+    , fromString "name" .= toJSON (getRuleName rule)
+    , fromString "premises" .= toJSON prems
+    , fromString "actions" .= toJSON acts
+    , fromString "conclusions" .= toJSON concs
+    ]
+  
+newtype EdgeWrapper = EdgeWrapper Edge
+
+instance ToJSON EdgeWrapper where
+  toJSON (EdgeWrapper (Edge (srcId, ConcIdx i) (tgtId, PremIdx j))) = object
+    [ fromString "source" .= edgeToJSON srcId i
+    , fromString "target" .= edgeToJSON tgtId j ]
+    where
+      edgeToJSON :: LVar -> Int -> Value
+      edgeToJSON id idx = object [ (fromString "node_id", toJSON id)
+                                 , (fromString "index", toJSON idx) ]
+
+-- | Pretty print a sequent
+toJSONSystem :: System -> Value
+toJSONSystem se = object
+      [ (fromString "nodes", toJSON $ map NodeWrapper $ M.toList $ L.get sNodes se)
+      , (fromString "edges", toJSON $ map EdgeWrapper $ S.toList $ L.get sEdges se) ]
+  --     , ("actions",        fsepList ppActionAtom $ unsolvedActionAtoms se)
+  --     , ("edges",          fsepList prettyEdge   $ S.toList $ L.get sEdges se)
+  --     , ("less",           fsepList prettyLess   $ S.toList $ L.get sLessAtoms se)
+  --     ]
+  --   ++
+  -- [ ("last",            maybe (text "none") prettyNodeId $ L.get sLastAtom se)
+  -- , ("formulas",        vsep $ map prettyGuarded {-(text . show)-} $ S.toList $ L.get sFormulas se)
+  -- , ("subterms",        prettySubtermStore $ L.get sSubtermStore se)
+  -- , ("equations",       prettyEqStore $ L.get sEqStore se)
+  -- , ("lemmas",          vsep $ map prettyGuarded $ S.toList $ L.get sLemmas se)
+  -- , ("allowed cases",   text $ show $ L.get sSourceKind se)
+  -- ]
+  -- where
+  --   combine_ (header, d) = fsep [keyword_ header <> colon, nest 2 d]
+  --   ppActionAtom (i, fa) = prettyNAtom (Action (varTerm i) fa)

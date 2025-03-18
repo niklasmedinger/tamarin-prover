@@ -124,19 +124,14 @@ type NoEqSym = (ByteString, (Int, Privacy, Constructability))
 newtype NoEqSymWrapper = NoEqSymWrapper { inner :: NoEqSym }
 
 instance ToJSON NoEqSymWrapper where
-  toJSON (NoEqSymWrapper (name, (arity, privacy, constructability))) =
-    object [ fromString "name" .= unpack name
-           , fromString "arity" .= arity
-           , fromString "privacy" .= privacy
-           , fromString "constructability" .= constructability
-           ]
+  toJSON (NoEqSymWrapper (name, (_, _, _))) = toJSON (unpack name)
 
 -- | Commutative function symbols
 data CSym = EMap
   deriving (Eq, Ord, Typeable, Data, Show, Generic, NFData, Binary)
 
 instance ToJSON CSym where
-  toJSON EMap = object [fromString "type" .= ("EMap" :: String)]
+  toJSON EMap = toJSON ("Emap" :: String)
 
 -- | Function symbols
 data FunSym
@@ -147,10 +142,10 @@ data FunSym
   deriving (Eq, Ord, Typeable, Data, Show, Generic, NFData, Binary)
 
 instance ToJSON FunSym where
-  toJSON (NoEq sym) = object [fromString "type" .= ("NoEq" :: String), fromString "symbol" .= (NoEqSymWrapper sym)]
-  toJSON (AC sym)   = object [fromString "type" .= ("AC" :: String), fromString "symbol" .= sym]
-  toJSON (C sym)    = object [fromString "type" .= ("C" :: String), fromString "symbol" .= sym]
-  toJSON List       = object [fromString "type" .= ("List" :: String)]
+  toJSON (NoEq sym) = toJSON $ NoEqSymWrapper sym
+  toJSON (AC sym)   = toJSON sym
+  toJSON (C sym)    = toJSON sym
+  toJSON List       = toJSON ("List" :: String)
 
 
 -- | Function signatures.
