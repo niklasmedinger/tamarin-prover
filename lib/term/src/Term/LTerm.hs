@@ -166,11 +166,11 @@ data LSort = LSortPub   -- ^ Arbitrary public names.
            deriving( Eq, Ord, Show, Enum, Bounded, Typeable, Data, Generic, NFData, Binary )
 
 instance ToJSON LSort where
-  toJSON LSortPub   = object [fromString "sort" .= ("LSortPub" :: String)]
-  toJSON LSortFresh = object [fromString "sort" .= ("LSortFresh" :: String)]
-  toJSON LSortMsg   = object [fromString "sort" .= ("LSortMsg" :: String)]
-  toJSON LSortNode  = object [fromString "sort" .= ("LSortNode" :: String)]
-  toJSON LSortNat   = object [fromString "sort" .= ("LSortNat" :: String)]
+  toJSON LSortPub   = toJSON "LSortPub"
+  toJSON LSortFresh = toJSON "LSortFresh"
+  toJSON LSortMsg   = toJSON "LSortMsg"
+  toJSON LSortNode  = toJSON "LSortNode"
+  toJSON LSortNat   = toJSON "LSortNat"
 
 -- | @sortCompare s1 s2@ compares @s1@ and @s2@ with respect to the partial order on sorts.
 -- Partial order:
@@ -238,7 +238,7 @@ type NTerm v = VTerm Name v
 instance ToJSON Name where
   toJSON (Name tag id) =
     object [ fromString "name" .= toJSON (show id)
-           , fromString "args" .= toJSON ([] :: String)
+           , fromString "args" .= toJSON ([] :: [Value])
            , fromString "type"  .= toJSON tag]
 
 -- Instances
@@ -296,13 +296,13 @@ data LVar = LVar
                               -- with the other 'sortOf' functions.
      , lvarIdx  :: !Integer
      }
-     deriving( Typeable, Data, Generic, NFData, Binary )
+     deriving( Typeable, Data, Generic, NFData, Binary)
 
 instance ToJSON LVar where
-  toJSON (LVar name _ idx) =
+  toJSON (LVar name sort idx) =
     object [ fromString "name" .= toJSON (name ++ "." ++ show idx)
-           , fromString "args" .= toJSON ([] :: String)
-           , fromString "type"  .= toJSON "Lvar" ]
+           , fromString "args" .= toJSON ([] :: [Value])
+           , fromString "type" .= toJSON sort ]
 
 -- | An alternative name for logical variables, which are intented to be
 -- variables of sort 'LSortNode'.

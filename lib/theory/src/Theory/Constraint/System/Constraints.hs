@@ -111,7 +111,7 @@ instance HasFrees Reason where
     foldFrees = const mempty
     foldFreesOcc  _ _ = const mempty
     mapFrees  = const pure
-    
+
 instance Apply LNSubst Edge where
     apply subst (Edge from to) = Edge (apply subst from) (apply subst to)
 
@@ -128,6 +128,12 @@ data LessAtom = LessAtom
   deriving( Show, Generic, NFData, Binary )
 
 $(mkLabels [''LessAtom])
+
+instance ToJSON LessAtom where
+  toJSON (LessAtom smaller larger r) = object
+    [ fromString "smaller" .= toJSON smaller
+    , fromString "greater" .= toJSON larger
+    , fromString "reason" .= toJSON (show r) ]
 
 instance Eq LessAtom where
   (LessAtom s1 l1 _) == (LessAtom s2 l2 _) = s1 == s2 && l1 == l2
@@ -276,7 +282,7 @@ instance Apply LNSubst Goal where
 -- | Pretty print a reason
 prettyReason :: HighlightDocument d => Reason -> d
 prettyReason r = text $ "induced by " ++ show r
-    
+
 -- | Pretty print a node.
 prettyNode :: HighlightDocument d => (NodeId, RuleACInst) -> d
 prettyNode (v,ru) = prettyNodeId v <> colon <-> prettyRuleACInst ru

@@ -297,6 +297,7 @@ import           Utils.Misc
 import Data.Aeson (ToJSON, toJSON, object, (.=), Value(..))
 import Data.Aeson.Key (fromString)
 import Term.Builtin.Convenience (lx1)
+import qualified Data.Aeson as Value
 ----------------------------------------------------------------------
 -- ClassifiedRules
 ----------------------------------------------------------------------
@@ -1950,7 +1951,7 @@ instance ToJSON NodeWrapper where
     , fromString "actions" .= toJSON acts
     , fromString "conclusions" .= toJSON concs
     ]
-  
+
 newtype EdgeWrapper = EdgeWrapper Edge
 
 instance ToJSON EdgeWrapper where
@@ -1962,22 +1963,26 @@ instance ToJSON EdgeWrapper where
       edgeToJSON id idx = object [ (fromString "node_id", toJSON id)
                                  , (fromString "index", toJSON idx) ]
 
+newtype ActionWrapper = ActionWrapper (NodeId, LNFact)
+
+instance ToJSON ActionWrapper where
+  toJSON (ActionWrapper (i, f)) = object
+    [ fromString "node_id" .= toJSON i
+    , fromString "action" .= toJSON f ]
+
 -- | Pretty print a sequent
 toJSONSystem :: System -> Value
 toJSONSystem se = object
-      [ (fromString "nodes", toJSON $ map NodeWrapper $ M.toList $ L.get sNodes se)
-      , (fromString "edges", toJSON $ map EdgeWrapper $ S.toList $ L.get sEdges se) ]
-  --     , ("actions",        fsepList ppActionAtom $ unsolvedActionAtoms se)
-  --     , ("edges",          fsepList prettyEdge   $ S.toList $ L.get sEdges se)
-  --     , ("less",           fsepList prettyLess   $ S.toList $ L.get sLessAtoms se)
-  --     ]
-  --   ++
-  -- [ ("last",            maybe (text "none") prettyNodeId $ L.get sLastAtom se)
-  -- , ("formulas",        vsep $ map prettyGuarded {-(text . show)-} $ S.toList $ L.get sFormulas se)
-  -- , ("subterms",        prettySubtermStore $ L.get sSubtermStore se)
-  -- , ("equations",       prettyEqStore $ L.get sEqStore se)
-  -- , ("lemmas",          vsep $ map prettyGuarded $ S.toList $ L.get sLemmas se)
-  -- , ("allowed cases",   text $ show $ L.get sSourceKind se)
+      ([ (fromString "nodes", toJSON $ map NodeWrapper $ M.toList $ L.get sNodes se)
+      , (fromString "edges", toJSON $ map EdgeWrapper $ S.toList $ L.get sEdges se)
+      , (fromString "actions", toJSON $ map ActionWrapper $ unsolvedActionAtoms se)
+      , (fromString "less", toJSON $ S.toList $ L.get sLessAtoms se)
+      -- , (fromString "formulas", toJSON $ S.toList $ L.get sFormulas se)
+       ]
+      ++ maybe [] (\i -> [(fromString "last", toJSON i)]) (L.get sLastAtom se))
+  -- , ("subterms",        prettySubtermStore $ L.get sSubtermStore se) -- Use
+  -- , ("equations",       prettyEqStore $ L.get sEqStore se) -- Use
+  -- , ("lemmas",          vsep $ map prettyGuarded $ S.toList $ L.get sLemmas se) -- Use
   -- ]
   -- where
   --   combine_ (header, d) = fsep [keyword_ header <> colon, nest 2 d]
