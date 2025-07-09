@@ -123,6 +123,9 @@ import           Theory.Constraint.Solver
 import           Theory.Model
 import           Theory.Text.Pretty
 
+import qualified          Data.PQueue.Prio.Min as PQ
+import Theory.Constraint.Solver.Goals (openGoals)
+
 
 
 ------------------------------------------------------------------------------
@@ -732,7 +735,7 @@ runAutoProver aut@(AutoProver _ _  bound cut _) =
     mapProverProof cutSolved $ maybe id boundProver bound autoProver
   where
     cutSolved = case cut of
-      CutDFS             -> cutOnSolvedDFS
+      CutDFS             -> cutOnSolvedAStar
       CutBFS             -> cutOnSolvedBFS
       CutSingleThreadDFS -> cutOnSolvedSingleThreadDFS
       CutNothing         -> id
@@ -784,6 +787,53 @@ instance Semigroup IterDeepRes where
 
 instance Monoid IterDeepRes where
     mempty = NoSolution
+
+-- | Search for attacks in an AStar manner, i.e., guided by a heuristic.
+cutOnSolvedAStar :: Proof (Maybe System) -> Proof (Maybe System)
+cutOnSolvedAStar prf0 = trace "DEBUG --- Executing A* proof search" $ astar (PQ.singleton 0 (prf0', 0))
+  where
+    prf0' = insertPaths prf0
+    -- astar :: MinPQueue Int (Proof (Maybe a, ProofPath), Int) -> Proof (Maybe a)
+    astar pq
+      -- If open set is empty the search has failed. Like `cutOnSolvedBFS' and
+      -- `cutOnSolvedDFS', we return the original `prf0' in this case.
+      | PQ.null pq = prf0 
+      -- Don't search in nodes that are not annotated
+      | (LNode (ProofStep _ (Nothing, _)) _) <- prf = prf0
+      -- If the current `prf' is solved, we return the path to it.
+      | (LNode (ProofStep (Finished Solved) (Just _, path)) _) <- prf = extractSolved path prf0
+      -- Recurse on annotated proof
+      | (LNode (ProofStep _ (Just _, _)) _ ) <- prf = astar pq''
+      where
+        -- Find node with min f-cost
+        (prf, gcost) = snd. PQ.findMin $ pq
+        -- Gcost for new cases. Every proof method currently has edge weight 1
+        -- TODO-NM: Turn this into `gcost + distance current_constraint_sys successor_constraint_sys'
+        gcost' = gcost + 1
+        -- Get the cases
+        cases = children prf
+        -- Delete current prf from priority queue
+        pq' = PQ.deleteMin pq
+        -- Insert the new cases into the priority queue
+        pq'' = Data.List.foldl' (\q successor_case
+          -> PQ.insert (gcost' + heuristic successor_case) (successor_case, gcost') q)  pq' cases
+          --           ^ Increment gcost and add heuristic ^ Put successor case + new g cost
+
+    -- TODO-NM: This basic heuristic considers the amount of open goals in the system
+    heuristic :: Proof (Maybe System, ProofPath) -> Int
+    -- Use amount of open goals as heuristic
+    heuristic (LNode (ProofStep _step (Just sys, _)) _cases) = length $ openGoals sys
+    -- Heuristic should never be called on un-annotated nodes.
+    heuristic (LNode (ProofStep _ (Nothing, _)) _) = error "Theory.Constraint.cutOnSolvedAStar: impossible, heuristic called with un-annotated node"
+    
+
+    extractSolved []         p               = p
+    extractSolved (label:ps) (LNode pstep m) = case M.lookup label m of
+        Just subprf ->
+          LNode pstep (M.fromList [(label, extractSolved ps subprf)])
+        Nothing     ->
+          error "Theory.Constraint.cutOnSolvedAStar: impossible, extractSolved failed, invalid path"
+
 
 -- | @cutOnSolvedSingleThreadDFS prf@ removes all other cases if an attack is
 -- found. The attack search is performed using a single-thread DFS traversal.

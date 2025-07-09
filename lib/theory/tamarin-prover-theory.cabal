@@ -69,7 +69,8 @@ library
     tamarin-prover-utils,
     text,
     transformers,
-    uniplate
+    uniplate,
+    pqueue
 
   hs-source-dirs: src
   exposed-modules:
