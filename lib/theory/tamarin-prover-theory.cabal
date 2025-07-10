@@ -70,7 +70,8 @@ library
     text,
     transformers,
     uniplate,
-    pqueue
+    pqueue,
+    hashable
 
   hs-source-dirs: src
   exposed-modules:

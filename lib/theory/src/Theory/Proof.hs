@@ -126,6 +126,7 @@ import           Theory.Text.Pretty
 import qualified          Data.PQueue.Prio.Min as PQ
 import Theory.Constraint.Solver.Goals (openGoals)
 
+import Data.Hashable (hash)
 
 
 ------------------------------------------------------------------------------
@@ -788,9 +789,10 @@ instance Semigroup IterDeepRes where
 instance Monoid IterDeepRes where
     mempty = NoSolution
 
+
 -- | Search for attacks in an AStar manner, i.e., guided by a heuristic.
 cutOnSolvedAStar :: Proof (Maybe System) -> Proof (Maybe System)
-cutOnSolvedAStar prf0 = trace "DEBUG --- Executing A* proof search" $ astar (PQ.singleton 0 (prf0', 0))
+cutOnSolvedAStar prf0 =  astar (PQ.singleton 0 (prf0', 0))
   where
     prf0' = insertPaths prf0
     -- astar :: MinPQueue Int (Proof (Maybe a, ProofPath), Int) -> Proof (Maybe a)
@@ -811,13 +813,20 @@ cutOnSolvedAStar prf0 = trace "DEBUG --- Executing A* proof search" $ astar (PQ.
         -- TODO-NM: Turn this into `gcost + distance current_constraint_sys successor_constraint_sys'
         gcost' = gcost + 1
         -- Get the cases
-        cases = children prf
+        cases = children prf `using` parTraversable nfProofMethod
         -- Delete current prf from priority queue
         pq' = PQ.deleteMin pq
         -- Insert the new cases into the priority queue
         pq'' = Data.List.foldl' (\q successor_case
           -> PQ.insert (gcost' + heuristic successor_case) (successor_case, gcost') q)  pq' cases
           --           ^ Increment gcost and add heuristic ^ Put successor case + new g cost
+
+    -- Parallel evaluation strategy for proof nodes
+    nfProofMethod node = do
+        void $ rseq (psMethod $ root node)
+        void $ rseq (psInfo   $ root node)
+        void $ rseq (children node)
+        return node
 
     -- TODO-NM: This basic heuristic considers the amount of open goals in the system
     heuristic :: Proof (Maybe System, ProofPath) -> Int
@@ -833,6 +842,98 @@ cutOnSolvedAStar prf0 = trace "DEBUG --- Executing A* proof search" $ astar (PQ.
           LNode pstep (M.fromList [(label, extractSolved ps subprf)])
         Nothing     ->
           error "Theory.Constraint.cutOnSolvedAStar: impossible, extractSolved failed, invalid path"
+
+-- -- | Search for attacks in an AStar manner, i.e., guided by a heuristic.
+-- cutOnSolvedAStar :: Proof (Maybe System) -> Proof (Maybe System)
+-- cutOnSolvedAStar prf0 = trace "DEBUG --- Executing A* proof search" $ astar (PQ.singleton 0 (prf0', 0))
+--   where
+--     prf0' = insertPaths prf0
+--     -- astar :: MinPQueue Int (Proof (Maybe a, ProofPath), Int) -> Proof (Maybe a)
+--     astar pq
+--       -- If open set is empty the search has failed. Like `cutOnSolvedBFS' and
+--       -- `cutOnSolvedDFS', we return the original `prf0' in this case.
+--       | PQ.null pq = trace "DEBUG --- A* search failed: empty priority queue" prf0 
+--       -- Don't search in nodes that are not annotated
+--       | (LNode (ProofStep _ (Nothing, _)) _) <- prf = 
+--           trace ("DEBUG --- A* skipping unannotated node at path: " ++ show (snd $ psInfo $ root prf)) prf0
+--       -- If the current `prf' is solved, we return the path to it.
+--       | (LNode (ProofStep (Finished Solved) (Just _, path)) _) <- prf = 
+--           trace ("DEBUG --- A* found solution at path: " ++ show path) $ extractSolved path prf0
+--       -- Recurse on annotated proof
+--       | (LNode (ProofStep _ (Just sys, _)) _ ) <- prf = 
+--           trace ("DEBUG --- A* expanding node with system hash: " ++ show (hashSys sys) ++ 
+--                  ", path: " ++ show (snd $ psInfo $ root prf) ++ 
+--                  ", g-cost: " ++ show gcost ++ 
+--                  ", h-cost: " ++ show (heuristic prf) ++ 
+--                  ", f-cost: " ++ show (gcost + heuristic prf) ++ 
+--                  ", children: " ++ show (length $ M.elems cases)) $
+--           trace ("DEBUG --- A* queue size before expansion: " ++ show (PQ.size pq)) $
+--           trace ("DEBUG --- A* queue contents: " ++ debugShowQueue pq) $
+--           trace ("DEBUG --- A* new children with f-costs: " ++ debugShowNewChildren cases gcost') $
+--           astar pq''
+--       where
+--         -- Find node with min f-cost
+--         (prf, gcost) = snd . PQ.findMin $ pq
+--         -- Gcost for new cases. Every proof method currently has edge weight 1
+--         -- TODO-NM: Turn this into `gcost + distance current_constraint_sys successor_constraint_sys'
+--         gcost' = gcost + 1
+--         -- Get the cases
+--         cases = children prf
+--         -- Delete current prf from priority queue
+--         pq' = PQ.deleteMin pq
+--         -- Insert the new cases into the priority queue
+--         pq'' = Data.List.foldl' (\q successor_case
+--           -> PQ.insert (gcost' + heuristic successor_case) (successor_case, gcost') q)  pq' cases
+--           --           ^ Increment gcost and add heuristic ^ Put successor case + new g cost
+
+    
+
+--     -- Helper function to show queue contents for debugging
+--     debugShowQueue :: PQ.MinPQueue Int (Proof (Maybe System, ProofPath), Int) -> String
+--     debugShowQueue q = 
+--       let queueList = take 10 $ PQ.toAscList q  -- Show first 10 elements
+--           showElement (fcost, (prf, gcost)) = 
+--             case psInfo (root prf) of
+--               (Just sys, path) -> "f:" ++ show fcost ++ " g:" ++ show gcost ++ 
+--                                   " h:" ++ show (heuristic prf) ++ 
+--                                   " path:" ++ show path ++ 
+--                                   " sys_hash:" ++ show (hashSys sys)
+--               (Nothing, path) -> "f:" ++ show fcost ++ " g:" ++ show gcost ++ 
+--                                 " path:" ++ show path ++ " sys:Nothing"
+--       in "[" ++ intercalate ", " (map showElement queueList) ++ 
+--          (if PQ.size q > 10 then ", ..." else "") ++ "]"
+
+--     hashSys :: System -> Int
+--     hashSys sys = hash $ show $ render $ prettySystem sys
+
+--     -- Helper function to show new children being added
+--     debugShowNewChildren :: M.Map CaseName (Proof (Maybe System, ProofPath)) -> Int -> String
+--     debugShowNewChildren cases gcost' = 
+--       let showChild (caseName, prf) = 
+--             case psInfo (root prf) of
+--               (Just sys, path) -> caseName ++ ":f:" ++ show (gcost' + heuristic prf) ++ 
+--                                   " g:" ++ show gcost' ++ 
+--                                   " h:" ++ show (heuristic prf) ++ 
+--                                   " path:" ++ show path ++ 
+--                                   " sys_hash:" ++ show (hashSys sys)
+--               (Nothing, path) -> caseName ++ ":f:" ++ show gcost' ++ 
+--                                 " g:" ++ show gcost' ++ 
+--                                 " path:" ++ show path ++ " sys:Nothing"
+--       in "[" ++ intercalate ", " (map showChild (M.toList cases)) ++ "]"
+
+--     -- TODO-NM: This basic heuristic considers the amount of open goals in the system
+--     heuristic :: Proof (Maybe System, ProofPath) -> Int
+--     -- Use amount of open goals as heuristic
+--     heuristic (LNode (ProofStep _step (Just sys, _)) _cases) = length $ openGoals sys
+--     -- Heuristic should never be called on un-annotated nodes.
+--     heuristic (LNode (ProofStep _ (Nothing, _)) _) = error "Theory.Constraint.cutOnSolvedAStar: impossible, heuristic called with un-annotated node"
+    
+--     extractSolved []         p               = p
+--     extractSolved (label:ps) (LNode pstep m) = case M.lookup label m of
+--         Just subprf ->
+--           LNode pstep (M.fromList [(label, extractSolved ps subprf)])
+--         Nothing     ->
+--           error "Theory.Constraint.cutOnSolvedAStar: impossible, extractSolved failed, invalid path"
 
 
 -- | @cutOnSolvedSingleThreadDFS prf@ removes all other cases if an attack is
