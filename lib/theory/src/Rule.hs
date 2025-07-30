@@ -14,7 +14,6 @@ import           Data.List
 
 import qualified Data.Set                            as S
 
-import           Control.Basics
 import           Control.Category
 import           Control.Monad.Reader
 
@@ -29,6 +28,9 @@ import           Theory.Tools.IntruderRules
 import           Term.Positions
 import           Term.Macro
 import Theory.Constraint.Solver.Sources (IntegerParameters)
+import qualified Data.Map as M
+import Theory.Tools.LoopBreakers (ffgRelAc)
+import Debug.Trace (trace, traceM)
 
 
 
@@ -128,12 +130,12 @@ closeRuleCache :: IntegerParameters  -- ^ Parameters for open chains and saturat
                -> Bool               -- ^ Diff or not
                -> Bool               -- ^ isSapic or not
                -> ClosedRuleCache    -- ^ Cached rules and case distinctions.
-closeRuleCache parameters restrictions typAsms forcedInjFacts sig protoRules intrRules verbose isdiff isSapic = -- trace ("closeRuleCache: " ++ show classifiedRules) $
+closeRuleCache parameters restrictions typAsms forcedInjFacts sig protoRules intrRules verbose isdiff isSapic = -- trace ("closeRuleCache: " ++ show ffgs) $
     ClosedRuleCache
-        classifiedRules rawSources refinedSources injFactInstances
+        classifiedRules rawSources refinedSources injFactInstances ffgs
   where
     ctxt0 = ProofContext
-        sig classifiedRules injFactInstances RawSource [] AvoidInduction Nothing Nothing 
+        sig classifiedRules injFactInstances RawSource [] AvoidInduction Nothing Nothing
         (error "closeRuleCache: trace quantifier should not matter here")
         (error "closeRuleCache: lemma name should not matter here") [] verbose isdiff
         (all isSubtermRule {-- $ trace (show destr ++ " - " ++ show (map isSubtermRule destr))-} destr) (any isConstantRule destr)
@@ -147,6 +149,18 @@ closeRuleCache parameters restrictions typAsms forcedInjFacts sig protoRules int
     -- inj fact instances
     injFactInstances = forcedInjFacts' `S.union`
         simpleInjectiveFactInstances reducibles (L.get cprRuleE <$> protoRules)
+
+    ffgs = -- trace ("Computing FFGs for " ++ show (S.size injFactInstances) ++ " tags") $
+          M.fromList $ do
+              (tag, _b) <- S.toList injFactInstances
+              let getPrems = enumPrems . L.get cprRuleAC
+              let getConcs = enumConcs . L.get cprRuleAC
+              let getVariants = getDisj . L.get (pracVariants . rInfo . cprRuleAC)
+              let ffg_rel = ffgRelAc getPrems getConcs getVariants protoRules tag
+              let ffg = runReader ffg_rel hnd
+              let e = map (\(f, s) -> (L.get cprRuleE f, L.get cprRuleE s)) ffg
+              return $ -- trace ("FFG for " ++ show tag ++ ": " ++ show (length e) ++ " relations") 
+                       (tag, e)
 
     -- precomputing the case distinctions: we make sure to only add safety
     -- restrictions. Otherwise, it wouldn't be sound to use the precomputed case
@@ -178,7 +192,7 @@ closeRuleCache parameters restrictions typAsms forcedInjFacts sig protoRules int
 -- | Returns true if the REFINED sources contain open chains.
 containsPartialDeconstructions :: ClosedRuleCache    -- ^ Cached rules and case distinctions.
                      -> Bool               -- ^ Result
-containsPartialDeconstructions (ClosedRuleCache _ _ cases _) =
+containsPartialDeconstructions (ClosedRuleCache _ _ cases _ _) =
       sum (map (sum . unsolvedChainConstraints) cases) /= 0
 
 -- | Add an action to a closed Proto Rule.

@@ -140,7 +140,7 @@ data FactTag = ProtoFact Multiplicity String Int
                           -- a message using a construction rule.
              | TermFact   -- ^ internal fact, only used to convert terms to facts
                           -- to simplify computations. should never occur in a graph.
-    deriving( Eq, Ord, Show, Typeable, Data, Generic, NFData, Binary )
+    deriving (Eq, Ord, Show, Typeable, Data, Generic, NFData, Binary)
 
 
 -- | Annotations are properties thhat might be used elsewhere (e.g. in

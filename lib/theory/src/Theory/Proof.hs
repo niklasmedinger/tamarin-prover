@@ -952,7 +952,14 @@ cutOnSolvedBFS =
           return $ LNode (ProofStep (Sorry (Just msg)) x) M.empty
     checkLevel l prf@(LNode step cs)
       | isNothing (psInfo step) = return prf
-      | otherwise               = LNode step <$> traverse (checkLevel (l-1)) cs
+      | otherwise               = LNode step <$> 
+          traverse (checkLevel (l-1)) (cs `using` parTraversable nfProofMethod)
+      where
+        nfProofMethod node = do
+            void $ rseq (psMethod $ root node)
+            void $ rseq (psInfo   $ root node)
+            void $ rseq (children node)
+            return node
 
 -- | Search for attacks in a BFS manner.
 cutOnSolvedBFSDiff :: DiffProof (Maybe a) -> DiffProof (Maybe a)

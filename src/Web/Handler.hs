@@ -47,6 +47,7 @@ module Web.Handler
   , getDownloadTheoryDiffR
   , getUnloadTheoryR
   , getUnloadTheoryDiffR
+  , getFFGGraphR
   )
 where
 
@@ -82,7 +83,8 @@ import Theory
   , toSignaturePure
   , checkAndExtendProver
   , theoryRestrictions
-  , Prover (runProver), unproven
+  , prettyRuleName
+  , Prover (runProver), unproven, ClosedRuleCache (_crcFFGs), getFactTag, cprRuleE
   )
 
 import Theory.Proof
@@ -140,6 +142,13 @@ import Theory.Text.Parser (parsePlainLemma)
 import Theory.Tools.Wellformedness  (prettyWfErrorReport)
 import Lemma
 import Prover (mkSystem)
+import Theory.Model (FactTag)
+import Data.DAG.Simple (Relation)
+import Theory.Model.Rule (ruleInfo)
+import Theory.Model (prettyProtoRuleName)
+import Theory.Model (prettyIntrRuleACInfo)
+import Theory.Model (ruleName)
+import Theory.Model (getRuleName)
 
 ------------------------------------------------------------------------------
 -- Manipulate the state
@@ -1162,6 +1171,31 @@ getOptions = do
   let dotOptions = defaultDotOptions { _doNodeStyle = nodeStyle }
   pure (graphOptions, dotOptions)
 
+getFFGGraphR :: TheoryIdx -> FactTag -> Handler ()
+                          -- ^The name of the fact
+getFFGGraphR idx tag = withTheory idx $ \ti -> do
+  let ffgs = _crcFFGs $ _thyCache ti.theory
+  let maybe_ffg = M.lookup tag ffgs
+  case maybe_ffg of
+    Nothing -> do
+      notFound
+    Just ffg -> do
+        yesod <- getYesod
+        img' <- liftIO $ traceExceptions "getFFGGraphR" $
+          renderGraphCode
+            yesod.imageFormat
+            yesod.outputCmd
+            yesod.cacheDir
+            ("digraph { " ++ relationToDot getRuleName ffg ++ " }")
+        case img' of
+          Nothing -> notFound
+          Just img -> sendFile (fromString . imageFormatMIME $ yesod.imageFormat) img
+      
+      
+  where
+    relationToDot :: (a -> String) -> Relation a -> String
+    relationToDot _ [] = ""
+    relationToDot f ((x, y):rels) = f x <> " -> " <> f y <> "\n" <> relationToDot f rels
 
 -- | Get rendered graph for theory and given path.
 getTheoryGraphR :: TheoryIdx -> TheoryPath -> Handler ()

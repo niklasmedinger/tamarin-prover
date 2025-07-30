@@ -12,6 +12,7 @@ module Theory.Text.Pretty (
   -- * Additional combinators
   , vsep
   , fsepList
+  , vsepList
 
   -- * Comments
   , lineComment
@@ -85,6 +86,9 @@ vsep = foldr ($--$) emptyDoc
 -- paragraph mode.
 fsepList :: Document d => (a -> d) -> [a] -> d
 fsepList pp = fsep . punctuate comma . map pp
+
+vsepList :: Document d => (a -> d) -> [a] -> d
+vsepList pp = vsep . map pp
 
 
 ------------------------------------------------------------------------------

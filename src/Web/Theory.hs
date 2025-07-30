@@ -32,6 +32,7 @@ module Web.Theory
   , applyProverAtPath
   , applyDiffProverAtPath
   , applyProverAtPathDiff
+  , renderGraphCode 
   )
 where
 
@@ -67,6 +68,7 @@ import TheoryObject (theoryMacros, prettyTactic, diffTheoryMacros, DiffLemma (..
 
 import Web.Settings
 import Web.Types
+import Theory.Text.Pretty (vsepList)
 
 ------------------------------------------------------------------------------
 -- Various other functions
@@ -151,6 +153,12 @@ applyDiffProverAtPath thy lemmaName proofPath prover =
 ------------------------------------------------------------------------------
 -- Pretty printing
 ------------------------------------------------------------------------------
+
+refFFG :: HtmlDocument d => RenderUrl -> TheoryIdx -> FactTag -> d
+refFFG renderUrl tidx fact = closedTag "img" [("class", "graph"), ("src", imgPath), ("onclick", jsOpenSrcInNewTab)]
+  where
+    imgPath = T.unpack $ renderUrl (FFGGraphR tidx $ fact)
+    jsOpenSrcInNewTab = "window.open(this.src, '_blank')"
 
 -- | Reference a dot graph for the given path.
 refDotPath :: HtmlDocument d => RenderUrl -> TheoryIdx -> TheoryPath -> d
@@ -859,13 +867,15 @@ reqCasesDiffSnippet renderUrl tidx s kind isdiff thy = vcat $
     htmlSourceDiff renderUrl tidx s kind isdiff <$> zip [1..] (getDiffSource s isdiff kind thy)
 
 -- | Build the Html document showing the rules of the theory.
-rulesSnippet :: HtmlDocument d => ClosedTheory -> d
-rulesSnippet thy = vcat
+rulesSnippet :: HtmlDocument d => RenderUrl -> TheoryIdx -> ClosedTheory -> d
+rulesSnippet renderImageUrl tidx thy = vcat
     [ if null (theoryMacros thy) then text empty
                                 else ppWithHeader "Macros" $
         (prettyMacros $ theoryMacros thy)
     , ppWithHeader "Fact Symbols with Injective Instances" $
         (if null injFacts then text "None" else fsepList (text . showInjFact) injFacts)
+    , ppWithHeader "Fact-Flow Graphs of the Injective Facts" $
+        (if null injFacts then text "None" else vsepList (refFFG renderImageUrl tidx) (map fst injFacts))
     , ppWithHeader "Multiset Rewriting Rules" $
         (if null (theoryMacros thy) then text empty else text "(Shown with macros application)") <-> (vsep $ map prettyRuleAC msrRules)
     , ppWithHeader "Restrictions of the Set of Traces" $
@@ -885,6 +895,10 @@ rulesSnippet thy = vcat
             ( withTag "h2" []                            (text header) $$
               withTag "p"  [("class","monospace rules")] body             )
             body
+
+        -- [ refDotPath renderImgUrl tidx (TheoryProof lemma proofPath)
+        -- | nonEmptyGraph se ]
+
 
 -- | Build the Html document showing the message theory.
 messageSnippet :: HtmlDocument d => ClosedTheory -> d
@@ -976,7 +990,7 @@ htmlThyPath :: RenderUrl      -- ^ The function for rendering Urls.
 htmlThyPath renderUrl renderImgUrl info path lPlaintext = case path of
   TheoryMethod{}        -> pp $ text "Cannot display theory method."
 
-  TheoryRules           -> pp $ rulesSnippet thy
+  TheoryRules           -> pp $ rulesSnippet renderImgUrl tidx thy
   TheoryMessage         -> pp $ messageSnippet thy
   TheoryTactic          -> pp $ tacticSnippet thy
   TheorySource kind _ _ -> pp $ reqCasesSnippet renderUrl tidx kind thy
@@ -1262,6 +1276,75 @@ htmlThyDbgPath thy path = go path
     go _ = Nothing
 -}
 
+renderGraphCode :: ImageFormat -> OutputCommand -> FilePath -> String -> IO (Maybe FilePath)
+renderGraphCode imageFormat outputCommand cacheDir code = do
+  let graphPath = cacheDir </> getGraphPath outputCommand.ocFormat code
+      imgPath = addExtension graphPath $ show imageFormat
+
+      -- A busy wait loop with a maximal number of iterations
+      renderedOrRendering :: Int -> IO Bool
+      renderedOrRendering n = do
+          graphExists <- doesFileExist graphPath
+          imgExists <- doesFileExist imgPath
+          if n > 0 && graphExists && not imgExists
+              then do
+                threadDelay (10 * 1000) -- wait 10 ms
+                renderedOrRendering (n - 1)
+              else pure imgExists
+
+  -- Ensure that the output directory exists.
+  createDirectoryIfMissing True (takeDirectory graphPath)
+
+  imgGenerated <- firstSuccess
+    [ -- There might be some other thread that rendered or is rendering
+      -- this dot file. We wait at most 50 iterations (0.5 sec timout)
+      -- for this other thread to render the image. Afterwards, we give
+      -- it a try by ourselves.
+      renderedOrRendering 50,
+      -- create dot-file and render to image
+      do
+        writeFile graphPath code
+        -- select the correct command to generate img
+        case outputCommand.ocFormat of
+          OutDot  -> dotToImg "dot" graphPath imgPath
+          OutJSON -> jsonToImg graphPath imgPath,
+      -- sometimes 'dot' fails => use 'fdp' as a backup tool
+      case outputCommand.ocFormat of
+        OutDot -> dotToImg "fdp" graphPath imgPath
+        _      -> return False
+    ]
+  if imgGenerated
+    then return $ Just imgPath
+    else trace ("WARNING: failed to convert:\n  '" ++ graphPath ++ "'")
+                (return Nothing)
+  where
+    -- render img file from json file
+    jsonToImg jsonFile imgFile = do
+      (ecode,_out,err) <- readProcessWithExitCode outputCommand.ocGraphCommand [imgFile, jsonFile] ""
+      case ecode of
+        ExitSuccess   -> return True
+        ExitFailure i -> do
+          putStrLn $ "jsonToImg: "++ outputCommand.ocGraphCommand ++" failed with code "
+                      ++show i++" for file "++jsonFile++":\n"++err
+          return False
+
+    -- render img file from dot file
+    dotToImg dotMode dotFile imgFile = do
+      (ecode,_out,err) <- readProcessWithExitCode outputCommand.ocGraphCommand
+                              [ "-T"++show imageFormat, "-K"++dotMode, "-o",imgFile, dotFile]
+                              ""
+      case ecode of
+        ExitSuccess   -> return True
+        ExitFailure i -> do
+          putStrLn $ "dotToImg: "++ outputCommand.ocGraphCommand ++" failed with code "
+                      ++show i++" for file "++dotFile++":\n"++err
+          return False
+
+    firstSuccess []     = return False
+    firstSuccess (m:ms) = do
+      s <- m
+      if s then return True else firstSuccess ms
+
 -- | Output either JSON or an image corresponding to the given theory path and return the generated file's path.
 -- Returns Nothing if there was an error during the image generation.
 imgThyPath :: ImageFormat                  -- ^ The preferred image output format.
@@ -1272,14 +1355,14 @@ imgThyPath :: ImageFormat                  -- ^ The preferred image output forma
            -> ClosedTheory                 -- ^ Theory from which to extract the 'System'.
            -> TheoryPath                   -- ^ Path of the 'System' in the theory.
            -> IO (Maybe FilePath)          -- ^ Path to the generated file.
-imgThyPath imageFormat outputCommand cacheDir_ toDot toJSON thy thyPath =
+imgThyPath imageFormat outputCommand cacheDir toDot toJSON thy thyPath =
     case thyPathSystem thyPath of
       Nothing -> return Nothing
       Just (jsonLabel, system) -> do
         let code = case outputCommand.ocFormat  of
                      OutDot -> prefixedShowDot $ toDot system
                      OutJSON -> toJSON jsonLabel system
-        renderGraphCode code
+        renderGraphCode imageFormat outputCommand cacheDir code
   where
     thyPathSystem :: TheoryPath -> Maybe (String, System)
     thyPathSystem (TheorySource k i j)          = casesSystem k i j
@@ -1308,75 +1391,6 @@ imgThyPath imageFormat outputCommand cacheDir_ toDot toJSON thy thyPath =
       where
         ruleList :: HasRuleName (Rule i) => [Rule i] -> String
         ruleList = intercalate ", " . nub . map showRuleCaseName
-
-    -- Render a piece of dot or JSON code
-    renderGraphCode code = do
-      let graphPath = cacheDir_ </> getGraphPath outputCommand.ocFormat code
-          imgPath = addExtension graphPath $ show imageFormat
-
-          -- A busy wait loop with a maximal number of iterations
-          renderedOrRendering :: Int -> IO Bool
-          renderedOrRendering n = do
-              graphExists <- doesFileExist graphPath
-              imgExists <- doesFileExist imgPath
-              if n > 0 && graphExists && not imgExists
-                  then do
-                    threadDelay (10 * 1000) -- wait 10 ms
-                    renderedOrRendering (n - 1)
-                  else pure imgExists
-
-      -- Ensure that the output directory exists.
-      createDirectoryIfMissing True (takeDirectory graphPath)
-
-      imgGenerated <- firstSuccess
-        [ -- There might be some other thread that rendered or is rendering
-          -- this dot file. We wait at most 50 iterations (0.5 sec timout)
-          -- for this other thread to render the image. Afterwards, we give
-          -- it a try by ourselves.
-          renderedOrRendering 50,
-          -- create dot-file and render to image
-          do
-            writeFile graphPath code
-            -- select the correct command to generate img
-            case outputCommand.ocFormat of
-              OutDot  -> dotToImg "dot" graphPath imgPath
-              OutJSON -> jsonToImg graphPath imgPath,
-          -- sometimes 'dot' fails => use 'fdp' as a backup tool
-          case outputCommand.ocFormat of
-            OutDot -> dotToImg "fdp" graphPath imgPath
-            _      -> return False
-        ]
-      if imgGenerated
-        then return $ Just imgPath
-        else trace ("WARNING: failed to convert:\n  '" ++ graphPath ++ "'")
-                   (return Nothing)
-
-    -- render img file from json file
-    jsonToImg jsonFile imgFile = do
-      (ecode,_out,err) <- readProcessWithExitCode outputCommand.ocGraphCommand [imgFile, jsonFile] ""
-      case ecode of
-        ExitSuccess   -> return True
-        ExitFailure i -> do
-          putStrLn $ "jsonToImg: "++ outputCommand.ocGraphCommand ++" failed with code "
-                      ++show i++" for file "++jsonFile++":\n"++err
-          return False
-
-    -- render img file from dot file
-    dotToImg dotMode dotFile imgFile = do
-      (ecode,_out,err) <- readProcessWithExitCode outputCommand.ocGraphCommand
-                              [ "-T"++show imageFormat, "-K"++dotMode, "-o",imgFile, dotFile]
-                              ""
-      case ecode of
-        ExitSuccess   -> return True
-        ExitFailure i -> do
-          putStrLn $ "dotToImg: "++ outputCommand.ocGraphCommand ++" failed with code "
-                      ++show i++" for file "++dotFile++":\n"++err
-          return False
-
-    firstSuccess []     = return False
-    firstSuccess (m:ms) = do
-      s <- m
-      if s then return True else firstSuccess ms
 
 -- | Render the image corresponding to the given theory path.
 -- Returns Nothing if there was an error during image generation.

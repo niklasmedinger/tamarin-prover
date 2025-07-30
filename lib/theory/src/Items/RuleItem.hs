@@ -14,6 +14,7 @@ import           Prelude                             hiding (id, (.))
 
 
 import qualified Data.Set                            as S
+import qualified Data.Map                            as M
 
 import           Control.Category
 import           Extension.Data.Label                hiding (get)
@@ -22,6 +23,7 @@ import qualified Extension.Data.Label                as L
 import           Theory.Model
 import           Theory.Proof
 import           Theory.Tools.InjectiveFactInstances
+import Data.DAG.Simple (Relation)
 
 ------------------------------------------------------------------------------
 -- Commented sets of rewriting rules
@@ -66,6 +68,7 @@ data ClosedRuleCache = ClosedRuleCache
        , _crcRawSources          :: [Source]
        , _crcRefinedSources      :: [Source]
        , _crcInjectiveFactInsts  :: S.Set (FactTag, [[MonotonicBehaviour]])
+       , _crcFFGs                :: M.Map FactTag (Relation ProtoRuleE)
        }
        deriving( Eq, Ord, Show, Generic, NFData, Binary )
 

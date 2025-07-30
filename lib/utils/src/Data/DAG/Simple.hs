@@ -19,6 +19,7 @@ module Data.DAG.Simple (
   , dfsLoopBreakers
   , cyclic
   , toposort
+  , toList
 
 ) where
 
@@ -141,6 +142,9 @@ image x rel = [ y' | (x', y') <- rel, x == x' ]
 -- | The inverse of a 'Relation'.
 inverse :: Relation a -> Relation a
 inverse rel = [ (y,x) | (x, y) <- rel ]
+
+toList :: Relation a -> [(a, a)]
+toList rel = rel
 
 {-
 prop_dfsLoopBreakers noSelfLoops rel0

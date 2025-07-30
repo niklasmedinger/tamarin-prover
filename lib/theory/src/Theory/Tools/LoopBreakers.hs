@@ -11,7 +11,8 @@
 module Theory.Tools.LoopBreakers (
 
   -- * Computing loop breakers for solving premises
-  useAutoLoopBreakersAC
+  useAutoLoopBreakersAC,
+  ffgRelAc
   ) where
 
 -- import Control.Applicative
@@ -56,6 +57,41 @@ premSolvingRelAC ePrems eConcs eVariants rules = reader $ \hnd -> do
     instances ru fa = do
         subst <- eVariants ru
         return (apply (subst `freshToFreeAvoiding` fa) fa)
+      
+-- An over-approxmiation of the dataflow relation. An element @(fromRu,
+-- toRu)@ denotes that there is a variant of a @fact@ conclusion of @fromRu@
+-- unifying with a variant of a @fact@ premise of @toRu@.
+ffgRelAc :: (a -> [(PremIdx, LNFact)])  -- ^ Enumerate premises
+         -> (a -> [(ConcIdx, LNFact)])  -- ^ Enumerate conclusions
+         -> (a -> [LNSubstVFresh])      -- ^ Enumerate variants
+         -> [a]                         -- ^ Base carrier
+         -> FactTag                     -- ^ Fact for which to compute the relation
+         -> WithMaude (Relation a)
+ffgRelAc ePrems eConcs eVariants rules fact = reader $ \hnd -> do
+    (fromRu, toRu) <- dataflowRelAC hnd
+    return (fromRu, toRu)
+      where
+        dataflowRelAC hnd = do
+            ruFrom <- rules
+            ruTo   <- rules
+            -- For all premises
+            (_, premFa0) <- ePrems ruTo
+            -- Only for facts with the same tag as the given fact
+            guard $ fact == factTag premFa0
+            -- NoSource Facts are already explicitly excluded from precomputation
+            guard $ not (isNoSourcesFact premFa0)
+            -- For all conclusions
+            (_, concFa0) <- eConcs ruFrom
+            guard $ or $ do
+                premFa <- instances ruTo premFa0
+                concFa <- instances ruFrom concFa0
+                let concFaFresh = rename concFa `evalFresh` avoid premFa
+                return $ (`runReader` hnd) (unifiableLNFacts concFaFresh premFa)
+            return (ruFrom, ruTo)
+
+        instances ru fa = do
+            subst <- eVariants ru
+            return (apply (subst `freshToFreeAvoiding` fa) fa)
 
 
 -- | Replace all loop-breaker information with loop-breakers computed

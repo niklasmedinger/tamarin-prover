@@ -74,6 +74,7 @@ import Yesod.Static
 import Theory
 import Theory.Tools.Wellformedness (WfErrorReport)
 import Main.TheoryLoader
+import Text.Read (readMaybe)
 
 
 ------------------------------------------------------------------------------
@@ -577,6 +578,7 @@ mkYesodData "WebUI" [parseRoutes|
 /thy/trace/#Int/main/*TheoryPath              TheoryPathMR            GET
 -- /thy/trace/#Int/debug/*TheoryPath             TheoryPathDR            GET
 /thy/trace/#Int/graph/*TheoryPath             TheoryGraphR            GET
+/thy/trace/#Int/ffg/#FactTag             FFGGraphR            GET
 /thy/trace/#Int/autoprove/#SolutionExtractor/#Int/#Bool/*TheoryPath AutoProverR             GET
 /thy/trace/#Int/autoproveAll/#SolutionExtractor/#Int/*TheoryPath AutoProverAllR             GET
 /thy/trace/#Int/next/#String/*TheoryPath      NextTheoryPathR         GET
@@ -625,6 +627,38 @@ instance PathPiece SolutionExtractor where
   fromPathPiece "bfs"          = Just CutBFS
   fromPathPiece "seqdfs"       = Just CutSingleThreadDFS
   fromPathPiece _              = Nothing
+
+instance PathPiece FactTag where
+  toPathPiece (ProtoFact Linear name arity) = T.pack ("L" ++ show arity ++ "_" ++ name)
+  toPathPiece (ProtoFact Persistent name arity) = T.pack ("P" ++ show arity ++ "_" ++ name)
+  toPathPiece _ = error "FactTag.toPathPiece: Only ProtocolFacts are supported"
+
+  fromPathPiece text = case T.unpack text of
+    'L':rest -> parseFactWithArity Linear rest
+    'P':rest -> parseFactWithArity Persistent rest
+    _        -> Nothing
+    where
+      parseFactWithArity multiplicity rest =
+        case break (== '_') rest of
+          (arityStr, '_':nameStr) -> 
+            case readMaybe arityStr of
+              Just arity -> Just $ ProtoFact multiplicity nameStr arity
+              Nothing    -> Nothing
+          _ -> Nothing
+
+instance Read FactTag where
+  readsPrec _ str = case str of
+    'L':rest -> parseFactWithArity Linear rest
+    'P':rest -> parseFactWithArity Persistent rest
+    _        -> []
+    where
+      parseFactWithArity multiplicity rest =
+        case reads rest of
+          [(arity, nameStr)] -> 
+            case reads nameStr of
+              [(name, remaining)] -> [(ProtoFact multiplicity name arity, remaining)]
+              _ -> []
+          _ -> []
 
 instance PathPiece Side where
   toPathPiece LHS = "LHS"

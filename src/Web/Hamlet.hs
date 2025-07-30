@@ -382,7 +382,7 @@ introTpl = [whamlet|
 
 {-
 -- | Template for editing a theory.
--- formTpl :: (HamletValue h, HamletUrl h ~ WebUIRoute, h ~ Widget ())
+-- formTpl :: (HamletValue h, Hamlet Url h ~ WebUIRoute, h ~ Widget ())
 --         => WebUIRoute  -- ^ Form action route
 --         -> String      -- ^ Submit button label
 --         -> Widget ()   -- ^ Form widget
